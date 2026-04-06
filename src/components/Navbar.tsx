@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Database } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity } from 'lucide-react';
 import { Button } from './ui/Base';
 import { useFirebase } from './FirebaseProvider';
 import { logout } from '../firebase';
@@ -19,7 +19,8 @@ const Navbar: React.FC = () => {
     { id: 'ai', path: '/ai', label: 'AI Elemzés', icon: Brain },
     { id: 'map', path: '/map', label: 'Térkép', icon: MapIcon },
     { id: 'search', path: '/search', label: 'Keresés', icon: Search },
-    { id: 'data', path: '/data', label: 'Adatok', icon: Database },
+    { id: 'audit', path: '/audit', label: 'Napló', icon: Activity },
+    { id: 'settings', path: '/settings', label: 'Beállítások', icon: Settings },
   ];
 
   return (

@@ -5,6 +5,7 @@
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { FirebaseProvider, useFirebase } from './components/FirebaseProvider';
+import { ToastProvider } from './components/ToastContext';
 import Navbar from './components/Navbar';
 import Dashboard from './components/Dashboard';
 import SalesManager from './components/SalesManager';
@@ -13,7 +14,8 @@ import ProcurementManager from './components/ProcurementManager';
 import AIDashboard from './components/AIDashboard';
 import SearchAnalytics from './components/SearchAnalytics';
 import SalesMap from './components/SalesMap';
-import DataManagement from './components/DataManagement';
+import Settings from './components/Settings';
+import AuditLogs from './components/AuditLogs';
 import Login from './components/Login';
 import { Loader2 } from 'lucide-react';
 
@@ -45,7 +47,8 @@ const AppContent: React.FC = () => {
           <Route path="/ai" element={<AIDashboard />} />
           <Route path="/map" element={<SalesMap />} />
           <Route path="/search" element={<SearchAnalytics />} />
-          <Route path="/data" element={<DataManagement />} />
+          <Route path="/audit" element={<AuditLogs />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -56,9 +59,11 @@ const AppContent: React.FC = () => {
 export default function App() {
   return (
     <FirebaseProvider>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <AppContent />
+        </BrowserRouter>
+      </ToastProvider>
     </FirebaseProvider>
   );
 }

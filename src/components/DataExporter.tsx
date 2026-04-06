@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Button, Card } from './ui/Base';
-import { Download, FileJson, FileSpreadsheet, Loader2, CheckCircle2 } from 'lucide-react';
+import { Download, FileJson, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, FileText, Database, Table } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { cn } from '../lib/utils';
+import { motion } from 'motion/react';
 
 const DataExporter: React.FC = () => {
   const [exporting, setExporting] = useState<string | null>(null);
@@ -66,24 +67,27 @@ const DataExporter: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <ExportCard 
           title="Eladások" 
-          description="Összes rögzített eladás exportálása."
+          description="Összes rögzített eladás."
+          icon={<Table className="w-5 h-5 text-indigo-600" />}
           onExport={(format) => handleExport('sales', format)}
           isExportingCSV={exporting === 'sales-csv'}
           isExportingJSON={exporting === 'sales-json'}
         />
         <ExportCard 
           title="Készlet" 
-          description="Aktuális raktárkészlet exportálása."
+          description="Aktuális raktárkészlet."
+          icon={<Database className="w-5 h-5 text-emerald-600" />}
           onExport={(format) => handleExport('inventory', format)}
           isExportingCSV={exporting === 'inventory-csv'}
           isExportingJSON={exporting === 'inventory-json'}
         />
         <ExportCard 
-          title="Függő Eladások" 
-          description="Még le nem zárt tranzakciók exportálása."
+          title="Függő" 
+          description="Le nem zárt tranzakciók."
+          icon={<FileText className="w-5 h-5 text-amber-600" />}
           onExport={(format) => handleExport('pending', format)}
           isExportingCSV={exporting === 'pending-csv'}
           isExportingJSON={exporting === 'pending-json'}
@@ -91,13 +95,17 @@ const DataExporter: React.FC = () => {
       </div>
 
       {status && (
-        <div className={cn(
-          "p-4 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2",
-          status.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-red-50 text-red-700 border border-red-100"
-        )}>
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={cn(
+            "p-4 rounded-xl flex items-center gap-3 border shadow-sm",
+            status.type === 'success' ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "bg-red-50 text-red-700 border-red-100"
+          )}
+        >
           {status.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-          <p className="text-sm font-medium">{status.message}</p>
-        </div>
+          <p className="text-sm font-bold">{status.message}</p>
+        </motion.div>
       )}
     </div>
   );
@@ -106,21 +114,30 @@ const DataExporter: React.FC = () => {
 const ExportCard: React.FC<{
   title: string;
   description: string;
+  icon: React.ReactNode;
   onExport: (format: 'csv' | 'json') => void;
   isExportingCSV: boolean;
   isExportingJSON: boolean;
-}> = ({ title, description, onExport, isExportingCSV, isExportingJSON }) => (
-  <Card className="p-6 hover:shadow-md transition-shadow">
-    <h3 className="font-bold text-slate-900 mb-1">{title}</h3>
-    <p className="text-xs text-slate-500 mb-6">{description}</p>
-    <div className="grid grid-cols-2 gap-3">
+}> = ({ title, description, icon, onExport, isExportingCSV, isExportingJSON }) => (
+  <Card className="p-5 hover:shadow-xl hover:shadow-slate-100 transition-all border-slate-100 group">
+    <div className="flex items-center gap-3 mb-4">
+      <div className="p-2 bg-slate-50 rounded-xl border border-slate-100 group-hover:bg-white transition-colors">
+        {icon}
+      </div>
+      <div>
+        <h3 className="font-black text-slate-900 text-sm tracking-tight">{title}</h3>
+        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{description}</p>
+      </div>
+    </div>
+    <div className="grid grid-cols-2 gap-2">
       <Button 
         variant="secondary" 
         size="sm" 
         onClick={() => onExport('csv')}
         disabled={isExportingCSV || isExportingJSON}
+        className="bg-white border-slate-200 text-xs font-bold"
       >
-        {isExportingCSV ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-2" />}
+        {isExportingCSV ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileSpreadsheet className="w-3 h-3 mr-2" />}
         CSV
       </Button>
       <Button 
@@ -128,16 +145,13 @@ const ExportCard: React.FC<{
         size="sm" 
         onClick={() => onExport('json')}
         disabled={isExportingCSV || isExportingJSON}
+        className="bg-white border-slate-200 text-xs font-bold"
       >
-        {isExportingJSON ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileJson className="w-4 h-4 mr-2" />}
+        {isExportingJSON ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileJson className="w-3 h-3 mr-2" />}
         JSON
       </Button>
     </div>
   </Card>
-);
-
-const AlertCircle: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
 );
 
 export default DataExporter;

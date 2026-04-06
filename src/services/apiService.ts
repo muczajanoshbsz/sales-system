@@ -165,4 +165,29 @@ export const apiService = {
       price: Number(p.price),
     }));
   },
+
+  // System
+  async getSystemBackup(): Promise<any> {
+    const response = await fetch(`${API_BASE}/system/backup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) throw new Error('Failed to create system backup');
+    return await response.json();
+  },
+
+  async restoreSystem(backupData: any): Promise<void> {
+    const response = await fetch(`${API_BASE}/system/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(backupData),
+    });
+    if (!response.ok) throw new Error('Failed to restore system');
+  },
+
+  async getAuditLogs(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/audit_logs`);
+    if (!response.ok) throw new Error('Failed to fetch audit logs');
+    return await response.json();
+  },
 };

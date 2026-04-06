@@ -6,11 +6,13 @@ import { formatCurrency, formatDate, cn } from '../lib/utils';
 import { APP_CONFIG } from '../constants';
 import { Plus, Edit2, Trash2, Check, X, Clock, Database, Download } from 'lucide-react';
 import { useFirebase } from './FirebaseProvider';
+import { useToast } from './ToastContext.tsx';
 import { apiService } from '../services/apiService';
 import { useNavigate } from 'react-router-dom';
 
 const SalesManager: React.FC = () => {
   const { user, isAdmin } = useFirebase();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [sales, setSales] = useState<Sale[]>([]);
   const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
@@ -96,9 +98,9 @@ const SalesManager: React.FC = () => {
           await apiService.updateSale(editingSale.id!, updatedSale);
           setIsModalOpen(false);
           setEditingSale(null);
+          showToast('Eladás sikeresen módosítva', 'success');
         } catch (err) {
-          console.error('Update failed:', err);
-          alert('Hiba történt a módosítás mentésekor: ' + (err as Error).message);
+          showToast('Hiba történt a módosítás mentésekor', 'error');
           return; // Don't reset form if it failed
         }
       } else {
@@ -110,6 +112,7 @@ const SalesManager: React.FC = () => {
         };
         await apiService.addPendingSale(pendingData);
         setIsModalOpen(false);
+        showToast('Függő eladás rögzítve', 'success');
       }
       
       resetForm();
@@ -159,9 +162,10 @@ const SalesManager: React.FC = () => {
       // Update pending status
       await apiService.updatePendingStatus(pending.id!, 'confirmed');
       
+      showToast('Eladás sikeresen rögzítve a készletből', 'success');
       fetchData();
     } catch (error) {
-      console.error('Failed to confirm sale:', error);
+      showToast('Hiba az eladás rögzítése során', 'error');
     }
   };
 
@@ -186,9 +190,10 @@ const SalesManager: React.FC = () => {
           await apiService.deleteSale(id);
           setSelectedSales(prev => prev.filter(sid => sid !== id));
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          showToast('Eladás törölve', 'success');
           fetchData();
         } catch (error) {
-          console.error('Failed to delete sale:', error);
+          showToast('Hiba a törlés során', 'error');
         }
       }
     });
