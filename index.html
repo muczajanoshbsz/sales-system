@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AirPods Pro Manager</title>
+    <script>
+      // Fix for "Cannot set property fetch of #<Window> which has only a getter"
+      // This error occurs when some libraries try to polyfill fetch in restricted environments.
+      (function() {
+        try {
+          if (window.fetch && !Object.getOwnPropertyDescriptor(window, 'fetch')?.writable) {
+            const descriptor = Object.getOwnPropertyDescriptor(window, 'fetch');
+            if (descriptor && descriptor.configurable) {
+              Object.defineProperty(window, 'fetch', {
+                value: window.fetch,
+                writable: true,
+                configurable: true
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Fetch polyfill fix failed:', e);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

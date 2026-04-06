@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and role information.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "client"] },
+        "displayName": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Recorded sales transaction.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "model": { "type": "string" },
+        "condition": { "type": "string" },
+        "platform": { "type": "string" },
+        "quantity": { "type": "number" },
+        "buy_price": { "type": "number" },
+        "sell_price": { "type": "number" },
+        "fees": { "type": "number" },
+        "profit": { "type": "number" },
+        "buyer": { "type": "string" },
+        "city": { "type": "string" },
+        "tracking_number": { "type": "string" },
+        "notes": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["date", "model", "condition", "platform", "quantity", "buy_price", "sell_price", "profit", "userId"]
+    },
+    "Stock": {
+      "title": "Stock",
+      "description": "Inventory levels for specific models and conditions.",
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "condition": { "type": "string" },
+        "quantity": { "type": "number" },
+        "buy_price": { "type": "number" },
+        "last_updated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["model", "condition", "quantity", "buy_price"]
+    },
+    "MarketPrice": {
+      "title": "Market Price",
+      "description": "Historical market price data for AI analysis.",
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "condition": { "type": "string" },
+        "platform": { "type": "string" },
+        "price": { "type": "number" },
+        "date": { "type": "string", "format": "date" }
+      },
+      "required": ["model", "condition", "platform", "price", "date"]
+    },
+    "PendingSale": {
+      "title": "Pending Sale",
+      "description": "Sale awaiting confirmation.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "model": { "type": "string" },
+        "condition": { "type": "string" },
+        "platform": { "type": "string" },
+        "quantity": { "type": "number" },
+        "buy_price": { "type": "number" },
+        "sell_price": { "type": "number" },
+        "fees": { "type": "number" },
+        "profit": { "type": "number" },
+        "buyer": { "type": "string" },
+        "city": { "type": "string" },
+        "tracking_number": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled"] },
+        "userId": { "type": "string" }
+      },
+      "required": ["date", "model", "condition", "platform", "quantity", "buy_price", "sell_price", "profit", "status", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles."
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Completed sales."
+    },
+    "/stock/{stockId}": {
+      "schema": "Stock",
+      "description": "Inventory items."
+    },
+    "/market_prices/{priceId}": {
+      "schema": "MarketPrice",
+      "description": "Market price tracking."
+    },
+    "/pending_sales/{pendingId}": {
+      "schema": "PendingSale",
+      "description": "Pending transactions."
+    }
+  }
+}
