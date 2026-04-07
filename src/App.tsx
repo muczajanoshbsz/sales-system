@@ -18,9 +18,45 @@ import Settings from './components/Settings';
 import AuditLogs from './components/AuditLogs';
 import Login from './components/Login';
 import { Loader2 } from 'lucide-react';
+import React, { useEffect } from 'react';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useFirebase();
+
+  useEffect(() => {
+    const applySettings = () => {
+      const saved = localStorage.getItem('app_settings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        
+        // Theme
+        if (settings.theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else if (settings.theme === 'light') {
+          document.documentElement.classList.remove('dark');
+        } else {
+          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', isDark);
+        }
+
+        // Compact Mode
+        if (settings.compactMode) {
+          document.body.classList.add('compact-mode');
+        } else {
+          document.body.classList.remove('compact-mode');
+        }
+      }
+    };
+
+    applySettings();
+    window.addEventListener('storage', applySettings);
+    // Custom event for same-window updates
+    window.addEventListener('settings-updated', applySettings);
+    return () => {
+      window.removeEventListener('storage', applySettings);
+      window.removeEventListener('settings-updated', applySettings);
+    };
+  }, []);
 
   if (loading) {
     return (

@@ -9,8 +9,21 @@
 
 @layer base {
   body {
-    @apply font-sans antialiased text-slate-900 bg-slate-50;
+    @apply font-sans antialiased text-slate-900 bg-slate-50 transition-colors duration-300;
   }
+  
+  .dark body {
+    @apply text-slate-100 bg-slate-950;
+  }
+  
+  /* Compact mode adjustments */
+  .compact-mode .p-6 { @apply p-4; }
+  .compact-mode .p-8 { @apply p-6; }
+  .compact-mode .gap-8 { @apply gap-4; }
+  .compact-mode .gap-6 { @apply gap-3; }
+  .compact-mode .space-y-8 { @apply space-y-4; }
+  .compact-mode .space-y-6 { @apply space-y-3; }
+  .compact-mode .py-8 { @apply py-4; }
 }
 
 @layer components {

@@ -239,6 +239,34 @@ async function startServer() {
     }
   });
 
+  apiRouter.delete('/audit_logs', async (req, res) => {
+    try {
+      await pool.query('DELETE FROM audit_logs');
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  apiRouter.delete('/system/all', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.query('DELETE FROM sales');
+      await connection.query('DELETE FROM stock');
+      await connection.query('DELETE FROM pending_sales');
+      await connection.query('DELETE FROM market_prices');
+      await connection.query('DELETE FROM audit_logs');
+      await connection.commit();
+      res.json({ success: true });
+    } catch (error) {
+      await connection.rollback();
+      res.status(500).json({ error: (error as Error).message });
+    } finally {
+      connection.release();
+    }
+  });
+
   // Sales
   apiRouter.get('/sales', async (req, res) => {
     try {

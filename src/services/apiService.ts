@@ -190,4 +190,18 @@ export const apiService = {
     if (!response.ok) throw new Error('Failed to fetch audit logs');
     return await response.json();
   },
+  
+  async clearAuditLogs(): Promise<void> {
+    const response = await fetch(`${API_BASE}/audit_logs`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to clear audit logs');
+  },
+
+  async deleteAllSystemData(): Promise<void> {
+    const response = await fetch(`${API_BASE}/system/all`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete all system data');
+  },
 };
