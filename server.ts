@@ -323,8 +323,9 @@ async function startServer() {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_market_prices_unique
           ON market_prices (model, "condition", platform, date);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_unique_model_condition
-          ON stock (model, "condition");
+        DROP INDEX IF EXISTS idx_stock_unique_model_condition;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_unique_model_condition_user
+          ON stock (model, "condition", "userId");
 
         CREATE INDEX IF NOT EXISTS idx_pending_sales_date
           ON pending_sales (date);
