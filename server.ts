@@ -119,6 +119,7 @@ async function startServer() {
         END
         $$;
       `);
+      
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
