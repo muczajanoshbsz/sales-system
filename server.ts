@@ -83,20 +83,20 @@ async function startServer() {
     next();
   });
 
-  const connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+  const connectionString =
+  process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+
   if (!connectionString) {
     throw new Error('Missing SUPABASE_DB_URL or DATABASE_URL environment variable');
   }
 
   const pool = new Pool({
     connectionString,
-    ssl: process.env.NODE_ENV === 'production'
-      ? { rejectUnauthorized: false }
-      : false,
-    max: Number(process.env.DB_POOL_MAX) || 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+    ssl: {
+      rejectUnauthorized: false
+    }
   });
+
 
   try {
     await pool.query('SELECT 1');
