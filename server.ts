@@ -79,6 +79,113 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function jsonBlockPrompt(task: string, payload: unknown, shapeDescription: string) {
+  return `
+${task}
+
+Input data:
+${JSON.stringify(payload, null, 2)}
+
+Return ONLY valid JSON.
+Expected JSON shape:
+${shapeDescription}
+`.trim();
+}
+
+function extractResponseText(data: any): string {
+  return (
+    data?.candidates?.[0]?.content?.parts
+      ?.map((part: any) => part?.text ?? '')
+      .join('') ?? ''
+  ).trim();
+}
+
+function safeJsonParse<T>(text: string): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      return JSON.parse(text.slice(start, end + 1)) as T;
+    }
+
+    const arrStart = text.indexOf('[');
+    const arrEnd = text.lastIndexOf(']');
+    if (arrStart !== -1 && arrEnd !== -1 && arrEnd > arrStart) {
+      return JSON.parse(text.slice(arrStart, arrEnd + 1)) as T;
+    }
+
+    throw new Error('Invalid JSON response from Gemini');
+  }
+}
+
+async function callGeminiJSON<T>(apiKey: string, prompt: string): Promise<T> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Gemini request failed');
+  }
+
+  const text = extractResponseText(data);
+  if (!text) {
+    throw new Error('Empty Gemini response');
+  }
+
+  return safeJsonParse<T>(text);
+}
+
+async function callGeminiChat(
+  apiKey: string,
+  systemInstruction: string,
+  history: { role: 'user' | 'model'; parts: { text: string }[] }[],
+  message: string
+): Promise<string> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: {
+          parts: [{ text: systemInstruction }],
+        },
+        contents: [
+          ...history,
+          { role: 'user', parts: [{ text: message }] },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+        },
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Gemini chat request failed');
+  }
+
+  return extractResponseText(data);
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
@@ -970,6 +1077,322 @@ async function startServer() {
       res.status(500).json({ error: (error as Error).message });
     } finally {
       client.release();
+    }
+  });
+
+  // AI endpoints
+  apiRouter.post('/ai/demand-forecast', async (req, res) => {
+    try {
+      const apiKey = requireEnv('GEMINI_API_KEY');
+      const { sales, model, condition } = req.body;
+
+      const modelSales = (sales || []).filter((s: any) => s.model === model && s.condition === condition);
+
+      const result = await callGeminiJSON<{
+        predictions: {
+          date: string;
+          predicted_demand: number;
+          seasonal_factor: number;
+          trend_effect: number;
+        }[];
+        summary: string;
+      }>(
+        apiKey,
+        jsonBlockPrompt(
+          `Analyze the following sales data for ${model} (${condition}) and provide a 90-day demand forecast in Hungarian.`,
+          {
+            sales: modelSales.map((s: any) => ({ date: s.date, quantity: s.quantity })),
+            currentDate: new Date().toISOString().split('T')[0],
+          },
+          `{
+  "predictions": [
+    {
+      "date": "YYYY-MM-DD",
+      "predicted_demand": 0,
+      "seasonal_factor": 1,
+      "trend_effect": 0
+    }
+  ],
+  "summary": "..."
+}`
+        )
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('AI demand forecast error:', error);
+      res.status(500).json({ error: 'AI demand forecast failed' });
+    }
+  });
+
+  apiRouter.post('/ai/smart-pricing', async (req, res) => {
+    try {
+      const apiKey = requireEnv('GEMINI_API_KEY');
+      const { product, marketPrices, recentSales } = req.body;
+
+      const filteredMarketPrices = (marketPrices || []).filter(
+        (p: any) => p.model === product.model && p.condition === product.condition
+      );
+      const filteredRecentSales = (recentSales || [])
+        .filter((s: any) => s.model === product.model && s.condition === product.condition)
+        .slice(-10);
+
+      const result = await callGeminiJSON<{
+        final_price: number;
+        base_price: number;
+        market_adjustment: number;
+        demand_factor: number;
+        seasonal_factor: number;
+        stock_factor: number;
+        confidence_score: number;
+        pricing_strategy: string;
+        reasoning: string;
+      }>(
+        apiKey,
+        jsonBlockPrompt(
+          'Calculate an intelligent dynamic price in Hungarian.',
+          {
+            product,
+            marketPrices: filteredMarketPrices,
+            recentSales: filteredRecentSales,
+            currentDate: new Date().toISOString().split('T')[0],
+          },
+          `{
+  "final_price": 0,
+  "base_price": 0,
+  "market_adjustment": 0,
+  "demand_factor": 1,
+  "seasonal_factor": 1,
+  "stock_factor": 1,
+  "confidence_score": 0.8,
+  "pricing_strategy": "...",
+  "reasoning": "..."
+}`
+        )
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('AI smart pricing error:', error);
+      res.status(500).json({ error: 'AI smart pricing failed' });
+    }
+  });
+
+  apiRouter.post('/ai/customer-analysis', async (req, res) => {
+    try {
+      const apiKey = requireEnv('GEMINI_API_KEY');
+      const { sales } = req.body;
+
+      const result = await callGeminiJSON<{
+        segments: { high_value: number; medium_value: number; low_value: number };
+        details: {
+          segment: string;
+          avg_purchase_count: number;
+          avg_total_spent: number;
+          avg_profit: number;
+          recommendation: string;
+        }[];
+      }>(
+        apiKey,
+        jsonBlockPrompt(
+          'Analyze customer behavior and segment them in Hungarian.',
+          {
+            sales: (sales || []).map((s: any) => ({
+              buyer: s.buyer,
+              price: s.sell_price,
+              profit: s.profit,
+              date: s.date,
+            })),
+          },
+          `{
+  "segments": {
+    "high_value": 0,
+    "medium_value": 0,
+    "low_value": 0
+  },
+  "details": [
+    {
+      "segment": "...",
+      "avg_purchase_count": 0,
+      "avg_total_spent": 0,
+      "avg_profit": 0,
+      "recommendation": "..."
+    }
+  ]
+}`
+        )
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('AI customer analysis error:', error);
+      res.status(500).json({ error: 'AI customer analysis failed' });
+    }
+  });
+
+  apiRouter.post('/ai/geographical-analysis', async (req, res) => {
+    try {
+      const apiKey = requireEnv('GEMINI_API_KEY');
+      const { cityData } = req.body;
+
+      const result = await callGeminiJSON<{
+        insights: {
+          title: string;
+          description: string;
+          impact: 'low' | 'medium' | 'high';
+        }[];
+        summary: string;
+        recommendations: string[];
+      }>(
+        apiKey,
+        jsonBlockPrompt(
+          'Analyze the geographical distribution of sales in Hungarian.',
+          { cityData },
+          `{
+  "insights": [
+    {
+      "title": "...",
+      "description": "...",
+      "impact": "low"
+    }
+  ],
+  "summary": "...",
+  "recommendations": ["..."]
+}`
+        )
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('AI geographical analysis error:', error);
+      res.status(500).json({ error: 'AI geographical analysis failed' });
+    }
+  });
+
+  apiRouter.post('/ai/detect-anomalies', async (req, res) => {
+    try {
+      const apiKey = requireEnv('GEMINI_API_KEY');
+      const { sales } = req.body;
+
+      const result = await callGeminiJSON<{
+        anomalies: {
+          id?: string;
+          date: string;
+          model: string;
+          reason: string;
+          severity: 'low' | 'medium' | 'high';
+          type: string;
+        }[];
+        risk_score: number;
+      }>(
+        apiKey,
+        jsonBlockPrompt(
+          'Detect anomalies or suspicious patterns in these sales in Hungarian.',
+          { sales: (sales || []).slice(-50) },
+          `{
+  "anomalies": [
+    {
+      "id": "1",
+      "date": "YYYY-MM-DD",
+      "model": "...",
+      "reason": "...",
+      "severity": "medium",
+      "type": "..."
+    }
+  ],
+  "risk_score": 0
+}`
+        )
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('AI anomaly detection error:', error);
+      res.status(500).json({ error: 'AI anomaly detection failed' });
+    }
+  });
+
+  apiRouter.post('/ai/pipeline-analysis', async (req, res) => {
+    try {
+      const apiKey = requireEnv('GEMINI_API_KEY');
+      const { pendingSales } = req.body;
+
+      const result = await callGeminiJSON<{
+        potential_revenue: number;
+        potential_profit: number;
+        risk_assessment: string;
+        recommendations: string[];
+        closing_forecast: {
+          timeframe: string;
+          expected_conversion: number;
+        }[];
+      }>(
+        apiKey,
+        jsonBlockPrompt(
+          'Analyze the following pending sales pipeline and provide insights in Hungarian.',
+          {
+            pendingSales: (pendingSales || []).map((s: any) => ({
+              model: s.model,
+              platform: s.platform,
+              revenue: s.sell_price,
+              profit: s.profit,
+              date: s.date,
+            })),
+          },
+          `{
+  "potential_revenue": 0,
+  "potential_profit": 0,
+  "risk_assessment": "...",
+  "recommendations": ["..."],
+  "closing_forecast": [
+    {
+      "timeframe": "...",
+      "expected_conversion": 0
+    }
+  ]
+}`
+        )
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('AI pipeline analysis error:', error);
+      res.status(500).json({ error: 'AI pipeline analysis failed' });
+    }
+  });
+
+  apiRouter.post('/ai/chat', async (req, res) => {
+    try {
+      const apiKey = requireEnv('GEMINI_API_KEY');
+      const { message, history, context } = req.body;
+
+      const systemInstruction = `You are a professional Business Assistant for an AirPods reseller.
+Your goal is to help the user manage their business by providing insights based on their data.
+
+Current Business Data Summary:
+- Total Sales: ${context?.sales?.length || 0}
+- Total Stock Items: ${context?.stock?.length || 0}
+- Pending Sales: ${context?.pendingSales?.length || 0}
+
+Detailed Data:
+- Sales: ${JSON.stringify((context?.sales || []).slice(-50))}
+- Stock: ${JSON.stringify(context?.stock || [])}
+- Pending: ${JSON.stringify(context?.pendingSales || [])}
+
+Guidelines:
+1. Be concise and professional.
+2. Always answer in Hungarian.
+3. If asked about what to buy, look at stock levels and recent sales trends.
+4. If asked about profits, calculate them from the sales data.
+5. If there is not enough data, clearly say so.
+6. Use markdown for formatting when helpful.
+7. Current Date: ${new Date().toISOString().split('T')[0]}`;
+
+      const text = await callGeminiChat(apiKey, systemInstruction, history || [], message || '');
+      res.json({ text });
+    } catch (error) {
+      console.error('Gemini chat error:', error);
+      res.status(500).json({ error: 'AI chat failed' });
     }
   });
 
