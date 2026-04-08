@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
-import { UserProfile, UserRole } from '../types';
+import { auth } from '../firebase';
+import { UserProfile } from '../types';
+import { apiService } from '../services/apiService';
 
 interface FirebaseContextType {
   user: User | null;
@@ -19,44 +19,35 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // For local development, we can bypass the real auth check
-    // and provide a mock user if needed, but let's keep the listener
-    // and just provide a default if it's not logged in.
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('🔐 Auth state changed:', firebaseUser?.email);
+      setLoading(true);
       if (firebaseUser) {
         setUser(firebaseUser);
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
-        const userDoc = await getDoc(userDocRef);
-        
-        if (userDoc.exists()) {
-          setProfile(userDoc.data() as UserProfile);
-        } else {
-          const isFirstAdmin = firebaseUser.email === 'csmucza@gmail.com';
-          const newProfile: UserProfile = {
+        try {
+          console.log('🔄 Syncing user with backend...');
+          // Sync with backend and get profile (including role)
+          const syncedProfile = await apiService.syncUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email!,
-            role: isFirstAdmin ? 'admin' : 'client',
-            displayName: firebaseUser.displayName || undefined,
-          };
-          await setDoc(userDocRef, newProfile);
-          setProfile(newProfile);
+            displayName: firebaseUser.displayName || undefined
+          });
+          console.log('✅ User synced successfully:', syncedProfile.role);
+          setProfile(syncedProfile);
+        } catch (error) {
+          console.error('❌ Error syncing user:', error);
+          // Fallback profile if sync fails
+          setProfile({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email!,
+            role: 'client',
+            displayName: firebaseUser.displayName || undefined
+          });
         }
       } else {
-        // MOCK USER for Localhost/Bypass
-        const mockUid = 'local-dev-user';
-        setUser({
-          uid: mockUid,
-          email: 'admin@localhost',
-          displayName: 'Local Admin',
-          emailVerified: true,
-        } as User);
-        
-        setProfile({
-          uid: mockUid,
-          email: 'admin@localhost',
-          role: 'admin',
-          displayName: 'Local Admin',
-        });
+        console.log('👋 User logged out');
+        setUser(null);
+        setProfile(null);
       }
       setLoading(false);
     });

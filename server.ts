@@ -81,6 +81,18 @@ async function startServer() {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
+      // Migration: Ensure userId column exists in sales table
+      try {
+        const [columns]: any = await pool.query('SHOW COLUMNS FROM sales LIKE "userId"');
+        if (columns.length === 0) {
+          console.log('Adding userId column to sales table...');
+          await pool.query('ALTER TABLE sales ADD COLUMN userId VARCHAR(100) NOT NULL DEFAULT "legacy"');
+          console.log('userId column added to sales successfully.');
+        }
+      } catch (err) {
+        console.error('Migration error (sales userId):', err);
+      }
+
       await pool.query(`
         CREATE TABLE IF NOT EXISTS stock (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -89,6 +101,7 @@ async function startServer() {
           quantity INT NOT NULL DEFAULT 0,
           buy_price DECIMAL(10, 2) NOT NULL,
           lead_time INT DEFAULT 7,
+          userId VARCHAR(100) NOT NULL,
           last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
       `);
@@ -113,6 +126,32 @@ async function startServer() {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
+      // Migration: Ensure userId column exists in pending_sales table
+      try {
+        const [columns]: any = await pool.query('SHOW COLUMNS FROM pending_sales LIKE "userId"');
+        if (columns.length === 0) {
+          console.log('Adding userId column to pending_sales table...');
+          await pool.query('ALTER TABLE pending_sales ADD COLUMN userId VARCHAR(100) NOT NULL DEFAULT "legacy"');
+          console.log('userId column added to pending_sales successfully.');
+        }
+      } catch (err) {
+        console.error('Migration error (pending_sales userId):', err);
+      }
+
+      // Migration: Ensure userId column exists in stock table
+      try {
+        const [columns]: any = await pool.query('SHOW COLUMNS FROM stock LIKE "userId"');
+        if (columns.length === 0) {
+          console.log('Adding userId column to stock table...');
+          // For existing records, we might want to assign them to the first admin or leave it empty
+          // but since it's NOT NULL, we'll set a default or allow NULL temporarily
+          await pool.query('ALTER TABLE stock ADD COLUMN userId VARCHAR(100) NOT NULL DEFAULT "legacy"');
+          console.log('userId column added successfully.');
+        }
+      } catch (err) {
+        console.error('Migration error (stock userId):', err);
+      }
+
       await pool.query(`
         CREATE TABLE IF NOT EXISTS market_prices (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -159,8 +198,30 @@ async function startServer() {
     }
   };
 
+  // Middleware to get user role
+  const getUserContext = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) {
+      (req as any).user = { role: 'guest' };
+      return next();
+    }
+
+    try {
+      const [rows]: any = await pool.query('SELECT role FROM users WHERE uid = ?', [userId]);
+      if (rows.length > 0) {
+        (req as any).user = { uid: userId, role: rows[0].role };
+      } else {
+        (req as any).user = { uid: userId, role: 'client' }; // Default for new users
+      }
+      next();
+    } catch (error) {
+      next();
+    }
+  };
+
   // API Router
   const apiRouter = express.Router();
+  apiRouter.use(getUserContext);
 
   // Ping test
   apiRouter.get('/ping', (req, res) => {
@@ -169,6 +230,8 @@ async function startServer() {
 
   // System Backup (POST to avoid interception)
   apiRouter.post('/system/backup', async (req, res) => {
+    const user = (req as any).user;
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     console.log('📥 BACKUP API ROUTE HIT');
     try {
       const [sales] = await pool.query('SELECT * FROM sales');
@@ -197,7 +260,78 @@ async function startServer() {
     }
   });
 
+  // User Sync
+  apiRouter.post('/users/sync', async (req, res) => {
+    console.log('📥 USER SYNC REQUEST:', req.body.email);
+    try {
+      const { uid, email, displayName } = req.body;
+      if (!uid || !email) {
+        console.warn('⚠️ Missing uid or email in sync request');
+        return res.status(400).json({ error: 'Missing uid or email' });
+      }
+
+      const [existing]: any = await pool.query('SELECT * FROM users WHERE uid = ?', [uid]);
+      
+      if (existing.length === 0) {
+        console.log('🆕 Creating new user:', email);
+        // Check if this is the first user or specific admin email
+        const [userCount]: any = await pool.query('SELECT COUNT(*) as count FROM users');
+        const role = (userCount[0].count === 0 || email === 'csmucza@gmail.com') ? 'admin' : 'client';
+        
+        await pool.query(
+          'INSERT INTO users (uid, email, displayName, role) VALUES (?, ?, ?, ?)',
+          [uid, email, displayName, role]
+        );
+        console.log('✅ New user created with role:', role);
+
+        if (role === 'admin') {
+          console.log('📦 Assigning legacy records to first admin...');
+          await pool.query('UPDATE sales SET userId = ? WHERE userId = "legacy"', [uid]);
+          await pool.query('UPDATE stock SET userId = ? WHERE userId = "legacy"', [uid]);
+          await pool.query('UPDATE pending_sales SET userId = ? WHERE userId = "legacy"', [uid]);
+          await pool.query('UPDATE audit_logs SET userId = ? WHERE userId = "legacy"', [uid]);
+        }
+
+        res.json({ uid, email, displayName, role });
+      } else {
+        console.log('🔄 Updating existing user:', email);
+        const role = (email === 'csmucza@gmail.com') ? 'admin' : existing[0].role;
+        await pool.query(
+          'UPDATE users SET email = ?, displayName = ?, role = ? WHERE uid = ?',
+          [email, displayName, role, uid]
+        );
+
+        // Robust migration: if this user is an admin, they should take over legacy records
+        if (role === 'admin') {
+          const [legacyCheck]: any = await pool.query('SELECT COUNT(*) as count FROM sales WHERE userId = "legacy"');
+          if (legacyCheck[0].count > 0) {
+            console.log('📦 Found legacy records, assigning to admin:', email);
+            await pool.query('UPDATE sales SET userId = ? WHERE userId = "legacy"', [uid]);
+            await pool.query('UPDATE stock SET userId = ? WHERE userId = "legacy"', [uid]);
+            await pool.query('UPDATE pending_sales SET userId = ? WHERE userId = "legacy"', [uid]);
+            await pool.query('UPDATE audit_logs SET userId = ? WHERE userId = "legacy"', [uid]);
+          }
+        }
+
+        console.log('✅ User updated successfully');
+        res.json({ ...existing[0], email, displayName, role });
+      }
+    } catch (error) {
+      console.error('❌ User sync error:', error);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   // Debug routes
+  apiRouter.get('/debug/users', async (req, res) => {
+    try {
+      const [users] = await pool.query('SELECT * FROM users');
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   apiRouter.get('/debug/routes', (req, res) => {
     const routes: string[] = [];
     function split(thing: any) {
@@ -231,8 +365,18 @@ async function startServer() {
 
   // Audit Logs
   apiRouter.get('/audit_logs', async (req, res) => {
+    const user = (req as any).user;
     try {
-      const [rows] = await pool.query('SELECT a.*, u.email as userEmail FROM audit_logs a LEFT JOIN users u ON a.userId = u.uid ORDER BY timestamp DESC LIMIT 100');
+      let query = 'SELECT a.*, u.email as userEmail FROM audit_logs a LEFT JOIN users u ON a.userId = u.uid';
+      let params: any[] = [];
+
+      if (user.role !== 'admin') {
+        query += ' WHERE a.userId = ?';
+        params.push(user.uid);
+      }
+
+      query += ' ORDER BY timestamp DESC LIMIT 100';
+      const [rows] = await pool.query(query, params);
       res.json(rows);
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -240,6 +384,8 @@ async function startServer() {
   });
 
   apiRouter.delete('/audit_logs', async (req, res) => {
+    const user = (req as any).user;
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     try {
       await pool.query('DELETE FROM audit_logs');
       res.json({ success: true });
@@ -249,6 +395,8 @@ async function startServer() {
   });
 
   apiRouter.delete('/system/all', async (req, res) => {
+    const user = (req as any).user;
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -269,8 +417,19 @@ async function startServer() {
 
   // Sales
   apiRouter.get('/sales', async (req, res) => {
+    const user = (req as any).user;
     try {
-      const [rows] = await pool.query('SELECT * FROM sales ORDER BY date DESC');
+      let query = 'SELECT * FROM sales';
+      let params: any[] = [];
+
+      if (user.role !== 'admin') {
+        if (!user.uid) return res.status(401).json({ error: 'Unauthorized' });
+        query += ' WHERE userId = ?';
+        params.push(user.uid);
+      }
+
+      query += ' ORDER BY date DESC';
+      const [rows] = await pool.query(query, params);
       res.json(rows);
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -278,25 +437,42 @@ async function startServer() {
   });
 
   apiRouter.post('/sales', async (req, res) => {
+    const user = (req as any).user;
     try {
       const sale = req.body;
+      
+      // Basic Validation
+      if (!sale.model || !sale.platform || sale.quantity <= 0) {
+        return res.status(400).json({ error: 'Hiányzó vagy érvénytelen adatok' });
+      }
+
+      const userId = sale.userId || user.uid;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
       const [result] = await pool.query(
         'INSERT INTO sales (date, model, `condition`, platform, quantity, buy_price, sell_price, fees, profit, buyer, city, tracking_number, notes, userId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [sale.date, sale.model, sale.condition, sale.platform, sale.quantity, sale.buy_price, sale.sell_price, sale.fees, sale.profit, sale.buyer, sale.city, sale.tracking_number, sale.notes, sale.userId]
+        [sale.date, sale.model, sale.condition, sale.platform, sale.quantity, sale.buy_price, sale.sell_price, sale.fees, sale.profit, sale.buyer, sale.city, sale.tracking_number, sale.notes, userId]
       );
-      await logActivity(sale.userId, 'CREATE_SALE', `${sale.model} (${sale.quantity} db) - ${sale.platform}`);
-      res.json({ id: (result as any).insertId, ...sale });
+      await logActivity(userId, 'CREATE_SALE', `${sale.model} (${sale.quantity} db) - ${sale.platform}`);
+      res.json({ id: (result as any).insertId, ...sale, userId });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
   });
 
   apiRouter.delete('/sales/:id', async (req, res) => {
+    const user = (req as any).user;
     try {
-      const [sale]: any = await pool.query('SELECT * FROM sales WHERE id = ?', [req.params.id]);
-      if (sale.length > 0) {
-        await logActivity(sale[0].userId, 'DELETE_SALE', `${sale[0].model} - ${sale[0].platform}`);
+      const [rows]: any = await pool.query('SELECT * FROM sales WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Sale not found' });
+      
+      const sale = rows[0];
+      if (user.role !== 'admin' && sale.userId !== user.uid) {
+        console.warn(`🚫 Forbidden sales delete: User ${user.uid} (role: ${user.role}) attempted to delete sale ${req.params.id} owned by ${sale.userId}`);
+        return res.status(403).json({ error: 'Forbidden' });
       }
+
+      await logActivity(sale.userId, 'DELETE_SALE', `${sale.model} - ${sale.platform}`);
       await pool.query('DELETE FROM sales WHERE id = ?', [req.params.id]);
       res.json({ success: true });
     } catch (error) {
@@ -305,13 +481,23 @@ async function startServer() {
   });
 
   apiRouter.put('/sales/:id', async (req, res) => {
+    const user = (req as any).user;
     try {
+      const [rows]: any = await pool.query('SELECT * FROM sales WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Sale not found' });
+      
+      const existingSale = rows[0];
+      if (user.role !== 'admin' && existingSale.userId !== user.uid) {
+        console.warn(`🚫 Forbidden sales update: User ${user.uid} (role: ${user.role}) attempted to update sale ${req.params.id} owned by ${existingSale.userId}`);
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
       const sale = req.body;
       await pool.query(
         'UPDATE sales SET date = ?, model = ?, `condition` = ?, platform = ?, quantity = ?, buy_price = ?, sell_price = ?, fees = ?, profit = ?, buyer = ?, city = ?, tracking_number = ?, notes = ? WHERE id = ?',
         [sale.date, sale.model, sale.condition, sale.platform, sale.quantity, sale.buy_price, sale.sell_price, sale.fees, sale.profit, sale.buyer, sale.city, sale.tracking_number, sale.notes, req.params.id]
       );
-      await logActivity(sale.userId, 'UPDATE_SALE', `${sale.model} - ${sale.platform}`);
+      await logActivity(user.uid, 'UPDATE_SALE', `${sale.model} - ${sale.platform}`);
       res.json({ id: req.params.id, ...sale });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -319,6 +505,8 @@ async function startServer() {
   });
 
   apiRouter.delete('/sales', async (req, res) => {
+    const user = (req as any).user;
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     try {
       await pool.query('DELETE FROM sales');
       res.json({ success: true });
@@ -329,8 +517,18 @@ async function startServer() {
 
   // Stock
   apiRouter.get('/stock', async (req, res) => {
+    const user = (req as any).user;
     try {
-      const [rows] = await pool.query('SELECT * FROM stock');
+      let query = 'SELECT * FROM stock';
+      let params: any[] = [];
+
+      if (user.role !== 'admin') {
+        if (!user.uid) return res.status(401).json({ error: 'Unauthorized' });
+        query += ' WHERE userId = ?';
+        params.push(user.uid);
+      }
+
+      const [rows] = await pool.query(query, params);
       res.json(rows);
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -338,7 +536,17 @@ async function startServer() {
   });
 
   apiRouter.put('/stock/:id', async (req, res) => {
+    const user = (req as any).user;
     try {
+      const [rows]: any = await pool.query('SELECT * FROM stock WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Stock item not found' });
+      
+      const item = rows[0];
+      if (user.role !== 'admin' && item.userId !== user.uid) {
+        console.warn(`🚫 Forbidden stock update: User ${user.uid} (role: ${user.role}) attempted to update stock ${req.params.id} owned by ${item.userId}`);
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
       const { quantity, lead_time } = req.body;
       if (lead_time !== undefined) {
         await pool.query('UPDATE stock SET quantity = ?, lead_time = ? WHERE id = ?', [quantity, lead_time, req.params.id]);
@@ -352,20 +560,40 @@ async function startServer() {
   });
 
   apiRouter.post('/stock', async (req, res) => {
+    const user = (req as any).user;
     try {
       const item = req.body;
+
+      // Basic Validation
+      if (!item.model || item.quantity < 0) {
+        return res.status(400).json({ error: 'Hiányzó vagy érvénytelen adatok' });
+      }
+
+      const userId = item.userId || user.uid;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
       const [result] = await pool.query(
-        'INSERT INTO stock (model, `condition`, quantity, buy_price, lead_time) VALUES (?, ?, ?, ?, ?)',
-        [item.model, item.condition, item.quantity, item.buy_price, item.lead_time || 7]
+        'INSERT INTO stock (model, `condition`, quantity, buy_price, lead_time, userId) VALUES (?, ?, ?, ?, ?, ?)',
+        [item.model, item.condition, item.quantity, item.buy_price, item.lead_time || 7, userId]
       );
-      res.json({ id: (result as any).insertId, ...item });
+      res.json({ id: (result as any).insertId, ...item, userId });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
   });
 
   apiRouter.delete('/stock/:id', async (req, res) => {
+    const user = (req as any).user;
     try {
+      const [rows]: any = await pool.query('SELECT * FROM stock WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Stock item not found' });
+      
+      const item = rows[0];
+      if (user.role !== 'admin' && item.userId !== user.uid) {
+        console.warn(`🚫 Forbidden stock delete: User ${user.uid} (role: ${user.role}) attempted to delete stock ${req.params.id} owned by ${item.userId}`);
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
       await pool.query('DELETE FROM stock WHERE id = ?', [req.params.id]);
       res.json({ success: true });
     } catch (error) {
@@ -375,8 +603,18 @@ async function startServer() {
 
   // Pending Sales
   apiRouter.get('/pending_sales', async (req, res) => {
+    const user = (req as any).user;
     try {
-      const [rows] = await pool.query('SELECT * FROM pending_sales WHERE status = "pending"');
+      let query = 'SELECT * FROM pending_sales WHERE status = "pending"';
+      let params: any[] = [];
+
+      if (user.role !== 'admin') {
+        if (!user.uid) return res.status(401).json({ error: 'Unauthorized' });
+        query += ' AND userId = ?';
+        params.push(user.uid);
+      }
+
+      const [rows] = await pool.query(query, params);
       res.json(rows);
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -384,20 +622,34 @@ async function startServer() {
   });
 
   apiRouter.post('/pending_sales', async (req, res) => {
+    const user = (req as any).user;
     try {
       const sale = req.body;
+      const userId = sale.userId || user.uid;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
       const [result] = await pool.query(
         'INSERT INTO pending_sales (date, model, `condition`, platform, quantity, buy_price, sell_price, fees, profit, buyer, city, tracking_number, notes, userId, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [sale.date, sale.model, sale.condition, sale.platform, sale.quantity, sale.buy_price, sale.sell_price, sale.fees, sale.profit, sale.buyer, sale.city, sale.tracking_number, sale.notes, sale.userId, sale.status]
+        [sale.date, sale.model, sale.condition, sale.platform, sale.quantity, sale.buy_price, sale.sell_price, sale.fees, sale.profit, sale.buyer, sale.city, sale.tracking_number, sale.notes, userId, sale.status]
       );
-      res.json({ id: (result as any).insertId, ...sale });
+      res.json({ id: (result as any).insertId, ...sale, userId });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
   });
 
   apiRouter.put('/pending_sales/:id', async (req, res) => {
+    const user = (req as any).user;
     try {
+      const [rows]: any = await pool.query('SELECT * FROM pending_sales WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Pending sale not found' });
+      
+      const sale = rows[0];
+      if (user.role !== 'admin' && sale.userId !== user.uid) {
+        console.warn(`🚫 Forbidden pending_sales update: User ${user.uid} (role: ${user.role}) attempted to update sale ${req.params.id} owned by ${sale.userId}`);
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
       const { status } = req.body;
       await pool.query('UPDATE pending_sales SET status = ? WHERE id = ?', [status, req.params.id]);
       res.json({ success: true });
@@ -417,6 +669,8 @@ async function startServer() {
   });
 
   apiRouter.post('/system/restore', async (req, res) => {
+    const user = (req as any).user;
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     const connection = await pool.getConnection();
     try {
       const { data } = req.body;
@@ -439,8 +693,8 @@ async function startServer() {
 
       // Restore Stock
       if (data.stock?.length > 0) {
-        const stockFields = ['model', 'condition', 'quantity', 'buy_price', 'lead_time'];
-        const stockValues = data.stock.map((s: any) => [s.model, s.condition, s.quantity, s.buy_price, s.lead_time]);
+        const stockFields = ['model', 'condition', 'quantity', 'buy_price', 'lead_time', 'userId'];
+        const stockValues = data.stock.map((s: any) => [s.model, s.condition, s.quantity, s.buy_price, s.lead_time, s.userId || 'legacy']);
         await connection.query(`INSERT INTO stock (${stockFields.map(f => `\`${f}\``).join(', ')}) VALUES ?`, [stockValues]);
       }
 

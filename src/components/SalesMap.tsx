@@ -70,34 +70,39 @@ const SalesMap: React.FC = () => {
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-96 gap-4">
       <Loader2 className="animate-spin h-8 w-8 text-indigo-600" />
-      <p className="text-slate-500 font-medium">Térkép adatok betöltése és geokódolás...</p>
+      <p className="text-slate-500 dark:text-slate-400 font-medium">Térkép adatok betöltése és geokódolás...</p>
     </div>
   );
 
   if (cities.length === 0) return (
-    <Card className="p-12 text-center text-slate-500 italic">
+    <Card className="p-12 text-center text-slate-500 dark:text-slate-400 italic bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
       Nincsenek város adatok az eladásokban.
     </Card>
   );
 
+  const isDarkMode = document.documentElement.classList.contains('dark');
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <div className="p-2 bg-indigo-100 rounded-lg">
-          <MapIcon className="w-6 h-6 text-indigo-600" />
+        <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+          <MapIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900">Eladások Földrajzi Eloszlása</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Eladások Földrajzi Eloszlása</h2>
       </div>
 
-      <Card className="h-[600px] relative z-0 overflow-hidden">
+      <Card className="h-[600px] relative z-0 overflow-hidden border-slate-200 dark:border-slate-800">
         <MapContainer 
           center={[47.1625, 19.5033]} // Center of Hungary
           zoom={7} 
           style={{ height: '100%', width: '100%' }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url={isDarkMode 
+              ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            }
           />
           <MapController cities={cities} />
           {cities.map((city, idx) => (

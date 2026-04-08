@@ -1,12 +1,33 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile
+} from 'firebase/auth';
+import { getFirestore, doc, getDocFromServer, enableIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Enable offline persistence
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code === 'failed-precondition') {
+    console.warn('Persistence failed: Multiple tabs open');
+  } else if (err.code === 'unimplemented') {
+    console.warn('Persistence is not available in this browser');
+  }
+});
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile };
 
 export enum OperationType {
   CREATE = 'create',
@@ -72,4 +93,7 @@ async function testConnection() {
 testConnection();
 
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
-export const logout = () => signOut(auth);
+export const logout = () => {
+  console.log('🚪 Logging out...');
+  return signOut(auth);
+};

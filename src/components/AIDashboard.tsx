@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Sale, StockItem, MarketPrice, PendingSale } from '../types';
 import { getDemandForecast, getSmartPricing, getCustomerAnalysis, detectAnomalies, getGeographicalAnalysis, geocodeCities, getPipelineAnalysis } from '../services/geminiService';
 import { Button, Card, Input, Select } from './ui/Base';
@@ -56,7 +56,7 @@ const AIDashboard: React.FC = () => {
     fetchData();
   }, []);
 
-  const handleForecast = async () => {
+  const handleForecast = useCallback(async () => {
     setAiLoading(true);
     try {
       const res = await getDemandForecast(sales, pricingForm.model, pricingForm.condition);
@@ -66,9 +66,9 @@ const AIDashboard: React.FC = () => {
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [sales, pricingForm.model, pricingForm.condition]);
 
-  const handlePricing = async () => {
+  const handlePricing = useCallback(async () => {
     setAiLoading(true);
     try {
       const res = await getSmartPricing(pricingForm, marketPrices, sales);
@@ -78,9 +78,9 @@ const AIDashboard: React.FC = () => {
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [pricingForm, marketPrices, sales]);
 
-  const handleCustomerAnalysis = async () => {
+  const handleCustomerAnalysis = useCallback(async () => {
     setAiLoading(true);
     try {
       const res = await getCustomerAnalysis(sales);
@@ -90,9 +90,9 @@ const AIDashboard: React.FC = () => {
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [sales]);
 
-  const handleAnomalies = async () => {
+  const handleAnomalies = useCallback(async () => {
     setAiLoading(true);
     try {
       const res = await detectAnomalies(sales);
@@ -102,9 +102,9 @@ const AIDashboard: React.FC = () => {
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [sales]);
 
-  const handleGeoAnalysis = async () => {
+  const handleGeoAnalysis = useCallback(async () => {
     setAiLoading(true);
     try {
       const cityCounts: Record<string, number> = {};
@@ -133,9 +133,9 @@ const AIDashboard: React.FC = () => {
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [sales]);
 
-  const handlePipelineAnalysis = async () => {
+  const handlePipelineAnalysis = useCallback(async () => {
     setAiLoading(true);
     try {
       const res = await getPipelineAnalysis(pendingSales.filter(p => p.status === 'pending'));
@@ -145,20 +145,25 @@ const AIDashboard: React.FC = () => {
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [pendingSales]);
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin h-8 w-8 text-indigo-600" /></div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-indigo-100 rounded-lg">
-          <Brain className="w-6 h-6 text-indigo-600" />
+    <div className="space-y-10 animate-in fade-in duration-700">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-indigo-600 rounded-xl shadow-md">
+            <Brain className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">AI Elemzés</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Intelligens előrejelzések és üzleti betekintések</p>
+          </div>
         </div>
-        <h2 className="text-2xl font-bold text-slate-900">AI Elemzés és Előrejelzés</h2>
       </div>
 
-      <div className="flex flex-wrap gap-2 p-1 bg-slate-100 rounded-xl w-fit">
+      <div className="flex flex-wrap gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-full sm:w-fit overflow-x-auto no-scrollbar">
         <TabButton active={activeTab === 'forecast'} onClick={() => setActiveTab('forecast')} icon={TrendingUp} label="Előrejelzés" />
         <TabButton active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={Sparkles} label="Árazás" />
         <TabButton active={activeTab === 'customers'} onClick={() => setActiveTab('customers')} icon={Users} label="Vásárlók" />
@@ -169,21 +174,21 @@ const AIDashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 gap-6">
         {activeTab === 'forecast' && (
-          <Card className="p-6 space-y-6">
+          <Card className="p-6 space-y-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
             <div className="flex flex-wrap gap-4 items-end">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Modell</label>
-                <Select value={pricingForm.model} onChange={(e) => setPricingForm({...pricingForm, model: e.target.value})}>
+                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Modell</label>
+                <Select value={pricingForm.model} onChange={(e) => setPricingForm({...pricingForm, model: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
                   {APP_CONFIG.models.map(m => <option key={m} value={m}>{m}</option>)}
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Állapot</label>
-                <Select value={pricingForm.condition} onChange={(e) => setPricingForm({...pricingForm, condition: e.target.value})}>
+                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Állapot</label>
+                <Select value={pricingForm.condition} onChange={(e) => setPricingForm({...pricingForm, condition: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
                   {APP_CONFIG.conditions.map(c => <option key={c} value={c}>{c}</option>)}
                 </Select>
               </div>
-              <Button onClick={handleForecast} isLoading={aiLoading}>Elemzés Indítása</Button>
+              <Button onClick={handleForecast} isLoading={aiLoading} className="bg-indigo-600 hover:bg-indigo-700">Elemzés Indítása</Button>
             </div>
 
             {forecast && (
@@ -191,16 +196,16 @@ const AIDashboard: React.FC = () => {
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={forecast.predictions}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
                       <XAxis dataKey="date" stroke="#94a3b8" fontSize={10} />
                       <YAxis stroke="#94a3b8" fontSize={12} />
-                      <Tooltip />
+                      <Tooltip contentStyle={{ backgroundColor: 'var(--tw-color-slate-900)', border: 'none', color: 'white' }} />
                       <Line type="monotone" dataKey="predicted_demand" stroke="#6366f1" strokeWidth={3} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-                  <p className="text-sm text-indigo-900 leading-relaxed">{forecast.summary}</p>
+                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                  <p className="text-sm text-indigo-900 dark:text-indigo-200 leading-relaxed">{forecast.summary}</p>
                 </div>
               </div>
             )}
@@ -208,19 +213,19 @@ const AIDashboard: React.FC = () => {
         )}
 
         {activeTab === 'pipeline' && (
-          <Card className="p-6 space-y-6">
-            <div className="flex justify-between items-center">
+          <Card className="p-6 space-y-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-slate-900">Pipeline Elemzés</h3>
-                <p className="text-sm text-slate-500">A függő eladások várható bevétele és konverziója.</p>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Pipeline Elemzés</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">A függő eladások várható bevétele és konverziója</p>
               </div>
-              <Button onClick={handlePipelineAnalysis} isLoading={aiLoading}>Elemzés Futtatása</Button>
+              <Button onClick={handlePipelineAnalysis} isLoading={aiLoading} className="bg-indigo-600 hover:bg-indigo-700">Elemzés Futtatása</Button>
             </div>
 
             {pipeline && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="p-6 bg-slate-900 rounded-2xl text-white">
+                  <div className="p-6 bg-slate-900 dark:bg-black rounded-2xl text-white">
                     <div className="flex items-center gap-3 mb-4">
                       <DollarSign className="w-5 h-5 text-emerald-400" />
                       <span className="text-sm font-bold text-slate-400 uppercase tracking-wider">Várható Bevétel</span>
@@ -229,28 +234,28 @@ const AIDashboard: React.FC = () => {
                     <p className="mt-2 text-sm text-slate-400">Várható profit: <span className="text-emerald-400 font-bold">{formatCurrency(pipeline.potential_profit)}</span></p>
                   </div>
 
-                  <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
+                  <div className="p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800">
                     <div className="flex items-center gap-3 mb-4">
-                      <AlertTriangle className="w-5 h-5 text-indigo-600" />
-                      <span className="text-sm font-bold text-indigo-900 uppercase tracking-wider">Kockázati Értékelés</span>
+                      <AlertTriangle className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                      <span className="text-sm font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-wider">Kockázati Értékelés</span>
                     </div>
-                    <p className="text-sm text-indigo-900 leading-relaxed font-medium">{pipeline.risk_assessment}</p>
+                    <p className="text-sm text-indigo-900 dark:text-indigo-200 leading-relaxed font-medium">{pipeline.risk_assessment}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="space-y-4">
-                    <h4 className="font-bold text-slate-900 flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-indigo-600" />
+                    <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                       Konverziós Előrejelzés
                     </h4>
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={pipeline.closing_forecast}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
                           <XAxis dataKey="timeframe" stroke="#94a3b8" fontSize={12} />
                           <YAxis stroke="#94a3b8" fontSize={12} tickFormatter={(v) => `${v/1000}k`} />
-                          <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                          <Tooltip contentStyle={{ backgroundColor: 'var(--tw-color-slate-900)', border: 'none', color: 'white' }} formatter={(v: number) => formatCurrency(v)} />
                           <Bar dataKey="expected_conversion" fill="#6366f1" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -258,15 +263,15 @@ const AIDashboard: React.FC = () => {
                   </div>
 
                   <div className="space-y-4">
-                    <h4 className="font-bold text-slate-900 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-500" />
+                    <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-500 dark:text-amber-400" />
                       Konverziós Javaslatok
                     </h4>
                     <div className="space-y-3">
                       {pipeline.recommendations.map((rec: string, i: number) => (
-                        <div key={i} className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <div key={i} className="flex items-start gap-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
                           <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                          <p className="text-sm text-slate-700">{rec}</p>
+                          <p className="text-sm text-slate-700 dark:text-slate-300">{rec}</p>
                         </div>
                       ))}
                     </div>
@@ -278,50 +283,50 @@ const AIDashboard: React.FC = () => {
         )}
 
         {activeTab === 'pricing' && (
-          <Card className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+          <Card className="p-6 space-y-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Modell</label>
-                <Select value={pricingForm.model} onChange={(e) => setPricingForm({...pricingForm, model: e.target.value})}>
+                <label className="text-sm font-medium dark:text-slate-300">Modell</label>
+                <Select value={pricingForm.model} onChange={(e) => setPricingForm({...pricingForm, model: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
                   {APP_CONFIG.models.map(m => <option key={m} value={m}>{m}</option>)}
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Állapot</label>
-                <Select value={pricingForm.condition} onChange={(e) => setPricingForm({...pricingForm, condition: e.target.value})}>
+                <label className="text-sm font-medium dark:text-slate-300">Állapot</label>
+                <Select value={pricingForm.condition} onChange={(e) => setPricingForm({...pricingForm, condition: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
                   {APP_CONFIG.conditions.map(c => <option key={c} value={c}>{c}</option>)}
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Platform</label>
-                <Select value={pricingForm.platform} onChange={(e) => setPricingForm({...pricingForm, platform: e.target.value})}>
+                <label className="text-sm font-medium dark:text-slate-300">Platform</label>
+                <Select value={pricingForm.platform} onChange={(e) => setPricingForm({...pricingForm, platform: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
                   {APP_CONFIG.platforms.map(p => <option key={p} value={p}>{p}</option>)}
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Beszerzési Ár</label>
-                <Input type="number" value={pricingForm.buy_price} onChange={(e) => setPricingForm({...pricingForm, buy_price: Number(e.target.value)})} />
+                <label className="text-sm font-medium dark:text-slate-300">Beszerzési Ár</label>
+                <Input type="number" value={pricingForm.buy_price} onChange={(e) => setPricingForm({...pricingForm, buy_price: Number(e.target.value)})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
               </div>
-              <Button onClick={handlePricing} isLoading={aiLoading}>Árajánlat Kérése</Button>
+              <Button onClick={handlePricing} isLoading={aiLoading} className="sm:col-span-2 lg:col-span-1">Árajánlat Kérése</Button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-4">
-                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-indigo-600" />
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                   Piaci Ár Előzmények ({pricingForm.model})
                 </h4>
-                <div className="h-48 bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <div className="h-48 bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={marketPrices
+                    <LineChart data={useMemo(() => marketPrices
                       .filter(mp => mp.model === pricingForm.model && mp.condition === pricingForm.condition)
-                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [marketPrices, pricingForm.model, pricingForm.condition])
                     }>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-slate-800" />
                       <XAxis dataKey="date" hide />
                       <YAxis hide domain={['auto', 'auto']} />
                       <Tooltip 
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', backgroundColor: 'var(--tw-color-slate-900)', color: 'white' }}
                         formatter={(value: number) => [formatCurrency(value), 'Ár']}
                       />
                       <Line type="monotone" dataKey="price" stroke="#6366f1" strokeWidth={2} dot={{ r: 4, fill: '#6366f1' }} activeDot={{ r: 6 }} />
@@ -332,7 +337,7 @@ const AIDashboard: React.FC = () => {
 
               {pricing && (
                 <div className="animate-in fade-in slide-in-from-right-4 duration-500">
-                  <div className="bg-slate-900 rounded-2xl p-6 text-white flex flex-col items-center justify-center text-center h-full">
+                  <div className="bg-slate-900 dark:bg-black rounded-2xl p-6 text-white flex flex-col items-center justify-center text-center h-full">
                     <p className="text-slate-400 text-[10px] font-bold mb-2 uppercase tracking-widest">Javasolt Eladási Ár</p>
                     <h3 className="text-4xl font-black mb-4">{formatCurrency(pricing.final_price)}</h3>
                     <div className="flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold">
@@ -345,9 +350,9 @@ const AIDashboard: React.FC = () => {
             </div>
 
             {pricing && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pt-6 border-t border-slate-100">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pt-6 border-t border-slate-100 dark:border-slate-800">
                 <div className="space-y-4">
-                  <h4 className="font-bold text-slate-900">Árképzés Részletei</h4>
+                  <h4 className="font-bold text-slate-900 dark:text-white">Árképzés Részletei</h4>
                   <div className="space-y-3">
                     <PricingDetail label="Alapár" value={formatCurrency(pricing.base_price)} />
                     <PricingDetail label="Piaci korrekció" value={`× ${pricing.market_adjustment}`} />
@@ -357,10 +362,10 @@ const AIDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex flex-col justify-center">
-                  <div className="p-6 bg-slate-50 rounded-2xl text-sm text-slate-600 italic relative">
-                    <span className="absolute top-2 left-2 text-4xl text-slate-200 font-serif">"</span>
+                  <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-2xl text-sm text-slate-600 dark:text-slate-400 italic relative">
+                    <span className="absolute top-2 left-2 text-4xl text-slate-200 dark:text-slate-700 font-serif">"</span>
                     <p className="relative z-10">{pricing.reasoning}</p>
-                    <span className="absolute bottom-2 right-2 text-4xl text-slate-200 font-serif">"</span>
+                    <span className="absolute bottom-2 right-2 text-4xl text-slate-200 dark:text-slate-700 font-serif">"</span>
                   </div>
                 </div>
               </div>
@@ -369,9 +374,9 @@ const AIDashboard: React.FC = () => {
         )}
 
         {activeTab === 'customers' && (
-          <Card className="p-6 space-y-6">
+          <Card className="p-6 space-y-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
             <div className="flex justify-between items-center">
-              <p className="text-slate-500 text-sm">Vásárlói viselkedés elemzése és szegmentálás.</p>
+              <p className="text-slate-500 dark:text-slate-400 text-sm">Vásárlói viselkedés elemzése és szegmentálás.</p>
               <Button onClick={handleCustomerAnalysis} isLoading={aiLoading}>Elemzés Futtatása</Button>
             </div>
             {customers && (
@@ -380,13 +385,13 @@ const AIDashboard: React.FC = () => {
                 <CustomerSegmentCard type="medium" count={customers.segments.medium_value} label="Rendszeres Vásárlók" />
                 <CustomerSegmentCard type="low" count={customers.segments.low_value} label="Alkalmi Vásárlók" />
                 <div className="md:col-span-3 space-y-4">
-                  <h4 className="font-bold text-slate-900">Részletes Megállapítások</h4>
+                  <h4 className="font-bold text-slate-900 dark:text-white">Részletes Megállapítások</h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {customers.details.map((d: any, i: number) => (
-                      <div key={i} className="p-4 rounded-xl border border-slate-100 bg-slate-50">
-                        <p className="font-bold text-slate-900 capitalize mb-1">{d.segment}</p>
-                        <p className="text-xs text-slate-500 mb-3">Átl. költés: {formatCurrency(d.avg_total_spent)}</p>
-                        <p className="text-sm text-slate-700 leading-relaxed">{d.recommendation}</p>
+                      <div key={i} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                        <p className="font-bold text-slate-900 dark:text-white capitalize mb-1">{d.segment}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Átl. költés: {formatCurrency(d.avg_total_spent)}</p>
+                        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{d.recommendation}</p>
                       </div>
                     ))}
                   </div>
@@ -397,37 +402,37 @@ const AIDashboard: React.FC = () => {
         )}
 
         {activeTab === 'geographical' && (
-          <Card className="p-6 space-y-6">
+          <Card className="p-6 space-y-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
             <div className="flex justify-between items-center">
-              <p className="text-slate-500 text-sm">Földrajzi eloszlás és logisztikai optimalizálás.</p>
+              <p className="text-slate-500 dark:text-slate-400 text-sm">Földrajzi eloszlás és logisztikai optimalizálás.</p>
               <Button onClick={handleGeoAnalysis} isLoading={aiLoading}>Elemzés Futtatása</Button>
             </div>
             {geoAnalysis && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-                  <p className="text-sm text-indigo-900 leading-relaxed">{geoAnalysis.summary}</p>
+                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                  <p className="text-sm text-indigo-900 dark:text-indigo-200 leading-relaxed">{geoAnalysis.summary}</p>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {geoAnalysis.insights.map((insight: any, i: number) => (
-                    <div key={i} className="p-4 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                    <div key={i} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                       <div className="flex items-center gap-2 mb-2">
                         <div className={cn(
                           "w-2 h-2 rounded-full",
                           insight.impact === 'high' ? "bg-red-500" : insight.impact === 'medium' ? "bg-amber-500" : "bg-blue-500"
                         )} />
-                        <h4 className="font-bold text-slate-900">{insight.title}</h4>
+                        <h4 className="font-bold text-slate-900 dark:text-white">{insight.title}</h4>
                       </div>
-                      <p className="text-sm text-slate-600">{insight.description}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">{insight.description}</p>
                     </div>
                   ))}
                 </div>
 
                 <div className="space-y-3">
-                  <h4 className="font-bold text-slate-900">Stratégiai Javaslatok</h4>
+                  <h4 className="font-bold text-slate-900 dark:text-white">Stratégiai Javaslatok</h4>
                   <ul className="space-y-2">
                     {geoAnalysis.recommendations.map((rec: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
                         <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
                         {rec}
                       </li>
@@ -440,14 +445,14 @@ const AIDashboard: React.FC = () => {
         )}
 
         {activeTab === 'anomalies' && (
-          <Card className="p-6 space-y-6">
+          <Card className="p-6 space-y-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
             <div className="flex justify-between items-center">
-              <p className="text-slate-500 text-sm">Szokatlan minták és lehetséges hibák keresése.</p>
+              <p className="text-slate-500 dark:text-slate-400 text-sm">Szokatlan minták és lehetséges hibák keresése.</p>
               <Button onClick={handleAnomalies} isLoading={aiLoading}>Vizsgálat Indítása</Button>
             </div>
             {anomalies && (
               <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-900 text-white">
+                <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-900 dark:bg-black text-white">
                   <div className={cn(
                     "p-3 rounded-lg",
                     anomalies.risk_score > 0.5 ? "bg-red-500" : "bg-emerald-500"
@@ -461,14 +466,14 @@ const AIDashboard: React.FC = () => {
                 </div>
                 <div className="space-y-3">
                   {anomalies.anomalies.map((a: any, i: number) => (
-                    <div key={i} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                    <div key={i} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                       <div className={cn(
                         "w-2 h-2 rounded-full mt-2 shrink-0",
                         a.severity === 'high' ? "bg-red-500" : a.severity === 'medium' ? "bg-amber-500" : "bg-blue-500"
                       )} />
                       <div>
-                        <p className="font-bold text-slate-900">{a.reason}</p>
-                        <p className="text-xs text-slate-500">{a.date} • {a.model} • {a.type}</p>
+                        <p className="font-bold text-slate-900 dark:text-white">{a.reason}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{a.date} • {a.model} • {a.type}</p>
                       </div>
                     </div>
                   ))}
@@ -490,7 +495,7 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: any; lab
     onClick={onClick}
     className={cn(
       "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all",
-      active ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-900"
+      active ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm" : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
     )}
   >
     <Icon className="w-4 h-4" />
@@ -499,17 +504,17 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: any; lab
 );
 
 const PricingDetail: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
-    <span className="text-sm text-slate-500">{label}</span>
-    <span className="text-sm font-bold text-slate-900">{value}</span>
+  <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+    <span className="text-sm text-slate-500 dark:text-slate-400">{label}</span>
+    <span className="text-sm font-bold text-slate-900 dark:text-white">{value}</span>
   </div>
 );
 
 const CustomerSegmentCard: React.FC<{ type: 'high' | 'medium' | 'low'; count: number; label: string }> = ({ type, count, label }) => {
   const colors = {
-    high: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-    medium: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    low: 'bg-slate-50 text-slate-600 border-slate-100',
+    high: 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-800',
+    medium: 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800',
+    low: 'bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 border-slate-100 dark:border-slate-800',
   };
   return (
     <div className={cn("p-6 rounded-2xl border text-center", colors[type])}>

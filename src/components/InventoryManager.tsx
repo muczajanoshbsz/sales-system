@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StockItem } from '../types';
 import { Button, Card, Input, Select } from './ui/Base';
 import { Modal } from './ui/Modal';
-import { formatCurrency, cn } from '../lib/utils';
+import { formatCurrency, cn, translateError } from '../lib/utils';
 import { APP_CONFIG } from '../constants';
 import { Plus, Edit2, Trash2, AlertCircle, TrendingDown, Clock, Download } from 'lucide-react';
 import { useFirebase } from './FirebaseProvider';
@@ -57,8 +57,7 @@ const InventoryManager: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) return;
-
+    
     try {
       if (editingItem) {
         await apiService.updateStock(editingItem.id!, formData.quantity || 0, formData.lead_time);
@@ -70,7 +69,7 @@ const InventoryManager: React.FC = () => {
       resetForm();
       fetchData();
     } catch (error) {
-      console.error('Failed to save stock:', error);
+      alert(translateError(error));
     }
   };
 
@@ -102,7 +101,7 @@ const InventoryManager: React.FC = () => {
       await apiService.deleteStock(id);
       fetchData();
     } catch (error) {
-      console.error('Failed to delete stock:', error);
+      alert(translateError(error));
     }
   };
 
@@ -130,78 +129,79 @@ const InventoryManager: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-900">Készlet Kezelés</h2>
-        <div className="flex gap-3">
-          <Button variant="secondary" onClick={() => navigate('/data')}>
+    <div className="space-y-10 animate-in fade-in duration-700">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Készlet Kezelés</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Raktárkészlet és utánpótlás tervezés</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="secondary" onClick={() => navigate('/settings')} className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm rounded-xl">
             <Download className="w-4 h-4 mr-2" />
             Exportálás
           </Button>
-          {isAdmin && (
-            <Button onClick={() => { setEditingItem(null); resetForm(); setIsModalOpen(true); }}>
-              <Plus className="w-4 h-4 mr-2" />
-              Új Tétel
-            </Button>
-          )}
+          <Button onClick={() => { setEditingItem(null); resetForm(); setIsModalOpen(true); }} className="bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-100 rounded-xl">
+            <Plus className="w-4 h-4 mr-2" />
+            Új Tétel
+          </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {stock.map((item) => {
           const prediction = getStockPrediction(item);
           const isCriticalSoon = prediction.daysUntilCritical < 30;
           const isLeadTimeRisk = prediction.daysRemaining < (item.lead_time || 7);
 
           return (
-            <Card key={item.id} className="p-6 relative group">
-              <div className="flex justify-between items-start mb-4">
+            <Card key={item.id} className="p-6 relative group bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all duration-300 rounded-2xl overflow-hidden">
+              <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">{item.model}</h3>
-                  <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold uppercase mt-1">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">{item.model}</h3>
+                  <span className="inline-block px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">
                     {item.condition}
                   </span>
                 </div>
                 <div className={cn(
-                  "px-3 py-1 rounded-full text-xs font-bold",
-                  item.quantity <= APP_CONFIG.thresholds.critical_stock ? "bg-red-100 text-red-700" :
-                  item.quantity <= APP_CONFIG.thresholds.low_stock ? "bg-amber-100 text-amber-700" :
-                  "bg-emerald-100 text-emerald-700"
+                  "px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase",
+                  item.quantity <= APP_CONFIG.thresholds.critical_stock ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" :
+                  item.quantity <= APP_CONFIG.thresholds.low_stock ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" :
+                  "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
                 )}>
                   {item.quantity} db
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Beszerzési ár</p>
-                    <p className="text-sm font-semibold text-slate-900">{formatCurrency(item.buy_price)}</p>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Beszerzési ár</p>
+                    <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCurrency(item.buy_price)}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Összérték</p>
-                    <p className="text-sm font-bold text-indigo-600">{formatCurrency(item.buy_price * item.quantity)}</p>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Összérték</p>
+                    <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(item.buy_price * item.quantity)}</p>
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5 text-slate-500">
-                      <TrendingDown className="w-3.5 h-3.5" />
-                      <span className="text-xs font-medium">Napi fogyás:</span>
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-slate-400">
+                      <TrendingDown className="w-4 h-4" />
+                      <span className="text-xs font-bold uppercase tracking-wider">Napi fogyás</span>
                     </div>
-                    <span className="text-xs font-bold text-slate-900">{prediction.velocity} db/nap</span>
+                    <span className="text-sm font-bold text-slate-900 dark:text-white">{prediction.velocity} db</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-slate-500">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span className="text-xs font-medium">Készlet kitart:</span>
+                    <div className="flex items-center gap-2 text-slate-400">
+                      <Clock className="w-4 h-4" />
+                      <span className="text-xs font-bold uppercase tracking-wider">Készlet kitart</span>
                     </div>
                     <span className={cn(
-                      "text-xs font-bold",
-                      prediction.daysRemaining < 7 ? "text-red-600" : 
-                      prediction.daysRemaining < 14 ? "text-amber-600" : 
-                      "text-emerald-600"
+                      "text-sm font-bold px-2 py-0.5 rounded-lg",
+                      prediction.daysRemaining < 7 ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" : 
+                      prediction.daysRemaining < 14 ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400" : 
+                      "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
                     )}>
                       {prediction.daysRemaining > 365 ? '∞' : `${prediction.daysRemaining} nap`}
                     </span>
@@ -212,7 +212,7 @@ const InventoryManager: React.FC = () => {
               {(isCriticalSoon || isLeadTimeRisk) && (
                 <div className={cn(
                   "mt-4 flex items-start gap-2 text-[11px] font-bold p-2.5 rounded-lg border",
-                  isLeadTimeRisk ? "bg-red-50 text-red-700 border-red-100" : "bg-amber-50 text-amber-700 border-amber-100"
+                  isLeadTimeRisk ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-100 dark:border-red-900/30" : "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-900/30"
                 )}>
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
@@ -225,16 +225,14 @@ const InventoryManager: React.FC = () => {
                 </div>
               )}
 
-              {isAdmin && (
-                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => openEditModal(item)} className="h-8 w-8 p-0">
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => deleteItem(item.id!)} className="h-8 w-8 p-0 text-red-500 hover:bg-red-50">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              )}
+              <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                <Button variant="ghost" size="sm" onClick={() => openEditModal(item)} className="h-8 w-8 p-0">
+                  <Edit2 className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => deleteItem(item.id!)} className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 dark:hover:bg-red-950">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
             </Card>
           );
         })}
@@ -256,17 +254,44 @@ const InventoryManager: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Mennyiség</label>
-              <Input type="number" name="quantity" value={formData.quantity} onChange={handleInputChange} min="0" required />
+              <label htmlFor="quantity" className="text-sm font-medium">Mennyiség</label>
+              <Input 
+                id="quantity"
+                type="number" 
+                name="quantity" 
+                value={formData.quantity} 
+                onChange={handleInputChange} 
+                min="0" 
+                required 
+                aria-required="true"
+              />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Beszerzési Ár</label>
-              <Input type="number" name="buy_price" value={formData.buy_price} onChange={handleInputChange} required />
+              <label htmlFor="buy_price" className="text-sm font-medium">Beszerzési Ár</label>
+              <Input 
+                id="buy_price"
+                type="number" 
+                name="buy_price" 
+                value={formData.buy_price} 
+                onChange={handleInputChange} 
+                min="0"
+                required 
+                aria-required="true"
+              />
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Beszerzési Idő (nap)</label>
-            <Input type="number" name="lead_time" value={formData.lead_time} onChange={handleInputChange} min="1" required />
+            <label htmlFor="lead_time" className="text-sm font-medium">Beszerzési Idő (nap)</label>
+            <Input 
+              id="lead_time"
+              type="number" 
+              name="lead_time" 
+              value={formData.lead_time} 
+              onChange={handleInputChange} 
+              min="1" 
+              required 
+              aria-required="true"
+            />
           </div>
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="ghost" type="button" onClick={() => setIsModalOpen(false)}>Mégse</Button>

@@ -1,12 +1,40 @@
 import { Sale, PendingSale, StockItem, MarketPrice } from '../types';
+import { auth } from '../firebase';
 
 const API_BASE = '/api';
+
+const getHeaders = () => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (auth.currentUser) {
+    headers['x-user-id'] = auth.currentUser.uid;
+  }
+  return headers;
+};
+
+const handleResponse = async (response: Response) => {
+  if (!response.ok) {
+    let errorMessage = 'Hálózati hiba történt';
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.error || errorData.message || errorMessage;
+    } catch (e) {
+      // Fallback to status text
+      errorMessage = response.statusText || errorMessage;
+    }
+    throw new Error(errorMessage);
+  }
+  return response;
+};
 
 export const apiService = {
   // Sales
   async getSales(): Promise<Sale[]> {
-    const response = await fetch(`${API_BASE}/sales`);
-    if (!response.ok) throw new Error('Failed to fetch sales');
+    const response = await fetch(`${API_BASE}/sales`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
     const data = await response.json();
     return data.map((s: any) => ({
       ...s,
@@ -21,10 +49,10 @@ export const apiService = {
   async addSale(sale: Omit<Sale, 'id'>): Promise<Sale> {
     const response = await fetch(`${API_BASE}/sales`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(sale),
     });
-    if (!response.ok) throw new Error('Failed to add sale');
+    await handleResponse(response);
     const s = await response.json();
     return {
       ...s,
@@ -39,17 +67,18 @@ export const apiService = {
   async deleteSale(id: string): Promise<void> {
     const response = await fetch(`${API_BASE}/sales/${id}`, {
       method: 'DELETE',
+      headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete sale');
+    await handleResponse(response);
   },
 
   async updateSale(id: string, sale: Partial<Sale>): Promise<Sale> {
     const response = await fetch(`${API_BASE}/sales/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(sale),
     });
-    if (!response.ok) throw new Error('Failed to update sale');
+    await handleResponse(response);
     const s = await response.json();
     return {
       ...s,
@@ -64,14 +93,17 @@ export const apiService = {
   async deleteAllSales(): Promise<void> {
     const response = await fetch(`${API_BASE}/sales`, {
       method: 'DELETE',
+      headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete all sales');
+    await handleResponse(response);
   },
 
   // Stock
   async getStock(): Promise<StockItem[]> {
-    const response = await fetch(`${API_BASE}/stock`);
-    if (!response.ok) throw new Error('Failed to fetch stock');
+    const response = await fetch(`${API_BASE}/stock`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
     const data = await response.json();
     return data.map((i: any) => ({
       ...i,
@@ -84,19 +116,19 @@ export const apiService = {
   async updateStock(id: string, quantity: number, lead_time?: number): Promise<void> {
     const response = await fetch(`${API_BASE}/stock/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify({ quantity, lead_time }),
     });
-    if (!response.ok) throw new Error('Failed to update stock');
+    await handleResponse(response);
   },
 
   async addStock(item: Omit<StockItem, 'id'>): Promise<StockItem> {
     const response = await fetch(`${API_BASE}/stock`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(item),
     });
-    if (!response.ok) throw new Error('Failed to add stock');
+    await handleResponse(response);
     const i = await response.json();
     return {
       ...i,
@@ -109,14 +141,17 @@ export const apiService = {
   async deleteStock(id: string): Promise<void> {
     const response = await fetch(`${API_BASE}/stock/${id}`, {
       method: 'DELETE',
+      headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete stock');
+    await handleResponse(response);
   },
 
   // Pending Sales
   async getPendingSales(): Promise<PendingSale[]> {
-    const response = await fetch(`${API_BASE}/pending_sales`);
-    if (!response.ok) throw new Error('Failed to fetch pending sales');
+    const response = await fetch(`${API_BASE}/pending_sales`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
     const data = await response.json();
     return data.map((s: any) => ({
       ...s,
@@ -131,10 +166,10 @@ export const apiService = {
   async addPendingSale(sale: Omit<PendingSale, 'id'>): Promise<PendingSale> {
     const response = await fetch(`${API_BASE}/pending_sales`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(sale),
     });
-    if (!response.ok) throw new Error('Failed to add pending sale');
+    await handleResponse(response);
     const s = await response.json();
     return {
       ...s,
@@ -149,16 +184,18 @@ export const apiService = {
   async updatePendingStatus(id: string, status: string): Promise<void> {
     const response = await fetch(`${API_BASE}/pending_sales/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify({ status }),
     });
-    if (!response.ok) throw new Error('Failed to update pending status');
+    await handleResponse(response);
   },
 
   // Market Prices
   async getMarketPrices(): Promise<MarketPrice[]> {
-    const response = await fetch(`${API_BASE}/market_prices`);
-    if (!response.ok) throw new Error('Failed to fetch market prices');
+    const response = await fetch(`${API_BASE}/market_prices`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
     const data = await response.json();
     return data.map((p: any) => ({
       ...p,
@@ -170,38 +207,52 @@ export const apiService = {
   async getSystemBackup(): Promise<any> {
     const response = await fetch(`${API_BASE}/system/backup`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to create system backup');
+    await handleResponse(response);
     return await response.json();
   },
 
   async restoreSystem(backupData: any): Promise<void> {
     const response = await fetch(`${API_BASE}/system/restore`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(backupData),
     });
-    if (!response.ok) throw new Error('Failed to restore system');
+    await handleResponse(response);
   },
 
   async getAuditLogs(): Promise<any[]> {
-    const response = await fetch(`${API_BASE}/audit_logs`);
-    if (!response.ok) throw new Error('Failed to fetch audit logs');
+    const response = await fetch(`${API_BASE}/audit_logs`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
     return await response.json();
   },
   
   async clearAuditLogs(): Promise<void> {
     const response = await fetch(`${API_BASE}/audit_logs`, {
       method: 'DELETE',
+      headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to clear audit logs');
+    await handleResponse(response);
   },
 
   async deleteAllSystemData(): Promise<void> {
     const response = await fetch(`${API_BASE}/system/all`, {
       method: 'DELETE',
+      headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete all system data');
+    await handleResponse(response);
+  },
+
+  async syncUser(userData: { uid: string; email: string; displayName?: string }): Promise<any> {
+    const response = await fetch(`${API_BASE}/users/sync`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(userData),
+    });
+    await handleResponse(response);
+    return await response.json();
   },
 };

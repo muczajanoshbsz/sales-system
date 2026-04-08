@@ -10,10 +10,7 @@
 @layer base {
   body {
     @apply font-sans antialiased text-slate-900 bg-slate-50 transition-colors duration-300;
-  }
-  
-  .dark body {
-    @apply text-slate-100 bg-slate-950;
+    @apply dark:text-slate-100 dark:bg-slate-950;
   }
   
   /* Compact mode adjustments */
@@ -26,10 +23,20 @@
   .compact-mode .py-8 { @apply py-4; }
 }
 
+@variant dark (&:where(.dark, .dark *));
+
 @layer components {
   .animate-in {
     animation-duration: 0.5s;
     animation-fill-mode: both;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
 

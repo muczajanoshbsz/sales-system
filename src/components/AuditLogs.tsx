@@ -41,11 +41,11 @@ const AuditLogs: React.FC = () => {
   }, [logs, searchTerm, activeFilter]);
 
   const getActionInfo = (action: string) => {
-    if (action.includes('CREATE')) return { color: 'text-emerald-600 bg-emerald-50 border-emerald-100', icon: <PlusCircle className="w-4 h-4" />, label: 'Létrehozás' };
-    if (action.includes('DELETE')) return { color: 'text-rose-600 bg-rose-50 border-rose-100', icon: <Trash2 className="w-4 h-4" />, label: 'Törlés' };
-    if (action.includes('UPDATE')) return { color: 'text-amber-600 bg-amber-50 border-amber-100', icon: <Edit3 className="w-4 h-4" />, label: 'Módosítás' };
-    if (action.includes('SYSTEM')) return { color: 'text-indigo-600 bg-indigo-50 border-indigo-100', icon: <ShieldAlert className="w-4 h-4" />, label: 'Rendszer' };
-    return { color: 'text-slate-600 bg-slate-50 border-slate-100', icon: <Activity className="w-4 h-4" />, label: 'Egyéb' };
+    if (action.includes('CREATE')) return { color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800', icon: <PlusCircle className="w-4 h-4" />, label: 'Létrehozás' };
+    if (action.includes('DELETE')) return { color: 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 border-rose-100 dark:border-rose-800', icon: <Trash2 className="w-4 h-4" />, label: 'Törlés' };
+    if (action.includes('UPDATE')) return { color: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-800', icon: <Edit3 className="w-4 h-4" />, label: 'Módosítás' };
+    if (action.includes('SYSTEM')) return { color: 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800', icon: <ShieldAlert className="w-4 h-4" />, label: 'Rendszer' };
+    return { color: 'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-700', icon: <Activity className="w-4 h-4" />, label: 'Egyéb' };
   };
 
   const exportToCSV = () => {
@@ -205,13 +205,13 @@ const AuditLogs: React.FC = () => {
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center py-24 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200"
+                className="text-center py-24 bg-slate-50 dark:bg-slate-900/50 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800"
               >
-                <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-slate-100">
-                  <Search className="w-10 h-10 text-slate-200" />
+                <div className="w-20 h-20 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-slate-100 dark:border-slate-700">
+                  <Search className="w-10 h-10 text-slate-200 dark:text-slate-700" />
                 </div>
-                <h3 className="text-lg font-bold text-slate-900">Nincs találat</h3>
-                <p className="text-slate-500 mt-2 max-w-xs mx-auto text-sm">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Nincs találat</h3>
+                <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-xs mx-auto text-sm">
                   Nem találtunk a keresési feltételeknek megfelelő naplóbejegyzést. Próbáljon más kulcsszót vagy szűrőt.
                 </p>
                 <Button 

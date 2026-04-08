@@ -3,6 +3,13 @@ import { Sale, StockItem, MarketPrice, PendingSale } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
+function parseResponseText<T>(response: { text?: string }): T {
+  if (!response.text) {
+    throw new Error("Empty response text");
+  }
+  return JSON.parse(response.text);
+}
+
 const HUNGARIAN_CITIES: Record<string, { lat: number, lng: number }> = {
   "budapest": { lat: 47.4979, lng: 19.0402 },
   "debrecen": { lat: 47.5316, lng: 21.6273 },
@@ -70,7 +77,7 @@ export async function getDemandForecast(sales: Sale[], model: string, condition:
       }
     });
 
-    return JSON.parse(response.text);
+    return parseResponseText(response);
   } catch (error) {
     console.warn("Gemini API error in getDemandForecast, using fallback logic:", error);
     
@@ -132,7 +139,7 @@ export async function getSmartPricing(
       }
     });
 
-    return JSON.parse(response.text);
+    return parseResponseText(response);
   } catch (error) {
     console.warn("Gemini API error in getSmartPricing, using fallback logic:", error);
     
@@ -194,16 +201,17 @@ export async function getCustomerAnalysis(sales: Sale[]) {
       }
     });
 
-    return JSON.parse(response.text);
+    return parseResponseText(response);
   } catch (error) {
     console.warn("Gemini API error in getCustomerAnalysis, using fallback logic:", error);
     
     const buyerStats: Record<string, { total: number, count: number, profit: number }> = {};
     sales.forEach(s => {
-      if (!buyerStats[s.buyer]) buyerStats[s.buyer] = { total: 0, count: 0, profit: 0 };
-      buyerStats[s.buyer].total += s.sell_price;
-      buyerStats[s.buyer].count += 1;
-      buyerStats[s.buyer].profit += s.profit;
+      const buyer = s.buyer ?? "unknown";
+      if (!buyerStats[buyer]) buyerStats[buyer] = { total: 0, count: 0, profit: 0 };
+      buyerStats[buyer].total += s.sell_price;
+      buyerStats[buyer].count += 1;
+      buyerStats[buyer].profit += s.profit;
     });
 
     const buyers = Object.values(buyerStats);
@@ -320,7 +328,7 @@ export async function geocodeCities(cities: string[]) {
         }
       });
 
-      const coords = JSON.parse(response.text);
+      const coords = parseResponseText<{ lat: number, lng: number }>(response);
       results.push({
         city: city.trim(),
         ...coords
@@ -378,7 +386,7 @@ export async function getGeographicalAnalysis(cityData: any[]) {
       }
     });
 
-    return JSON.parse(response.text);
+    return parseResponseText(response);
   } catch (error) {
     console.warn("Gemini API error in getGeographicalAnalysis, using fallback logic:", error);
     
@@ -432,11 +440,18 @@ export async function detectAnomalies(sales: Sale[]) {
       }
     });
 
-    return JSON.parse(response.text);
+    return parseResponseText(response);
   } catch (error) {
     console.warn("Gemini API error in detectAnomalies, using fallback logic:", error);
     
-    const anomalies = [];
+    const anomalies: {
+      id?: string;
+      date: string;
+      model: string;
+      reason: string;
+      severity: "low" | "medium" | "high";
+      type: string;
+    }[] = [];
     const avgPrice = sales.reduce((sum, s) => sum + s.sell_price, 0) / sales.length;
     
     // Simple rule-based anomaly detection
@@ -496,7 +511,7 @@ export async function getPipelineAnalysis(pendingSales: PendingSale[]) {
       }
     });
 
-    return JSON.parse(response.text);
+    return parseResponseText(response);
   } catch (error) {
     console.warn("Gemini API error in getPipelineAnalysis, using fallback logic:", error);
     
@@ -517,5 +532,52 @@ export async function getPipelineAnalysis(pendingSales: PendingSale[]) {
         { timeframe: "14 napon belül", expected_conversion: Math.round(revenue * 0.2) }
       ]
     };
+  }
+}
+export async function getChatResponse(
+  message: string,
+  history: { role: 'user' | 'model', parts: { text: string }[] }[],
+  context: { sales: Sale[], stock: StockItem[], pendingSales: PendingSale[] }
+) {
+  try {
+    const systemInstruction = `You are a professional Business Assistant for an AirPods reseller. 
+    Your goal is to help the user manage their business by providing insights based on their data.
+    
+    Current Business Data Summary:
+    - Total Sales: ${context.sales.length}
+    - Total Stock Items: ${context.stock.length}
+    - Pending Sales: ${context.pendingSales.length}
+    
+    Detailed Data (use this to answer specific questions):
+    - Sales: ${JSON.stringify(context.sales.slice(-50))}
+    - Stock: ${JSON.stringify(context.stock)}
+    - Pending: ${JSON.stringify(context.pendingSales)}
+    
+    Guidelines:
+    1. Be concise and professional.
+    2. Use Hungarian language (magyarul válaszolj).
+    3. If asked about what to buy, look at stock levels and recent sales trends.
+    4. If asked about profits, calculate them from the sales data.
+    5. If you don't have enough data to answer precisely, say so and provide an estimate if possible.
+    6. Use markdown for formatting (bold, lists, tables).
+    7. Current Date: ${new Date().toISOString().split('T')[0]}
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        ...history,
+        { role: 'user', parts: [{ text: message }] }
+      ],
+      config: {
+        systemInstruction,
+        temperature: 0.7,
+      }
+    });
+
+    return response.text;
+  } catch (error) {
+    console.error("Gemini Chat Error:", error);
+    return "Sajnálom, hiba történt az üzenet feldolgozása közben. Kérlek, próbáld újra később!";
   }
 }

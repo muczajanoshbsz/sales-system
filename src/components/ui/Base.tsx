@@ -39,6 +39,7 @@ export const Button: React.FC<ButtonProps> = ({
         className
       )}
       disabled={disabled || isLoading}
+      aria-busy={isLoading}
       {...props}
     >
       {isLoading ? (

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare } from 'lucide-react';
 import { Button } from './ui/Base';
 import { useFirebase } from './FirebaseProvider';
 import { logout } from '../firebase';
@@ -17,6 +17,7 @@ const Navbar: React.FC = () => {
     { id: 'inventory', path: '/inventory', label: 'Készlet', icon: Package },
     { id: 'procurement', path: '/procurement', label: 'Beszerzés', icon: TrendingUp },
     { id: 'ai', path: '/ai', label: 'AI Elemzés', icon: Brain },
+    { id: 'assistant', path: '/assistant', label: 'Asszisztens', icon: MessageSquare },
     { id: 'map', path: '/map', label: 'Térkép', icon: MapIcon },
     { id: 'search', path: '/search', label: 'Keresés', icon: Search },
     { id: 'audit', path: '/audit', label: 'Napló', icon: Activity },
@@ -24,54 +25,54 @@ const Navbar: React.FC = () => {
   ];
 
   return (
-    <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">
+    <nav className="bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center gap-8">
-            <NavLink to="/" className="flex-shrink-0 flex items-center gap-2">
-              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                <Package className="text-white w-5 h-5" />
+        <div className="flex justify-between h-20">
+          <div className="flex items-center gap-4 xl:gap-8 min-w-0">
+            <NavLink to="/" className="flex-shrink-0 flex items-center gap-3 group">
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200 group-hover:scale-110 transition-transform duration-300">
+                <Package className="text-white w-6 h-6" />
               </div>
-              <span className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight truncate max-w-[150px] sm:max-w-none">
+              <span className="text-xl font-bold text-slate-900 dark:text-white truncate hidden sm:inline">
                 AirPods Manager
               </span>
             </NavLink>
             
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden lg:flex items-center gap-0.5 xl:gap-1 overflow-hidden">
               {menuItems.map((item) => (
                 <NavLink
                   key={item.id}
                   to={item.path}
                   className={({ isActive }) => cn(
-                    "px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2",
+                    "px-1.5 xl:px-3 py-2 rounded-xl text-[10px] xl:text-[11px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-1.5 shrink-0",
                     isActive 
-                      ? "bg-indigo-50 text-indigo-700" 
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                      ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md" 
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900"
                   )}
                 >
-                  <item.icon className="w-4 h-4" />
-                  {item.label}
+                  <item.icon className="w-3.5 h-3.5" />
+                  <span className="hidden xl:inline">{item.label}</span>
                 </NavLink>
               ))}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden sm:flex flex-col items-end">
-              <span className="text-sm font-semibold text-slate-900">{profile?.displayName || profile?.email}</span>
-              <span className="text-xs text-slate-500 capitalize">{profile?.role}</span>
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-4">
+            <div className="hidden md:flex flex-col items-end">
+              <span className="text-xs font-bold text-slate-900 dark:text-white uppercase truncate max-w-[120px]">{profile?.displayName || profile?.email}</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{profile?.role}</span>
             </div>
-            <div className="hidden sm:flex h-8 w-8 rounded-full bg-slate-100 items-center justify-center border border-slate-200">
-              <User className="w-4 h-4 text-slate-600" />
+            <div className="hidden md:flex h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-900 items-center justify-center border border-slate-200/60 dark:border-slate-800 shadow-inner">
+              <User className="w-5 h-5 text-slate-600 dark:text-slate-400" />
             </div>
-            <Button variant="ghost" size="sm" onClick={logout} className="hidden sm:flex text-slate-500">
-              <LogOut className="w-4 h-4" />
+            <Button variant="ghost" size="sm" onClick={logout} className="hidden md:flex text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 rounded-xl transition-all">
+              <LogOut className="w-5 h-5" />
             </Button>
             
             {/* Mobile Menu Button */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+              className="lg:hidden p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -86,7 +87,7 @@ const Navbar: React.FC = () => {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-white border-t border-slate-100 overflow-hidden"
+            className="lg:hidden bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 overflow-hidden"
           >
             <div className="px-4 py-4 space-y-1">
               {menuItems.map((item) => (
@@ -98,7 +99,7 @@ const Navbar: React.FC = () => {
                     "px-4 py-3 rounded-xl text-base font-bold transition-all flex items-center gap-3",
                     isActive 
                       ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" 
-                      : "text-slate-600 hover:bg-slate-50"
+                      : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900"
                   )}
                 >
                   {({ isActive }) => (
@@ -110,20 +111,20 @@ const Navbar: React.FC = () => {
                 </NavLink>
               ))}
               
-              <div className="pt-4 mt-4 border-t border-slate-100">
+              <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-3 px-4 py-2 mb-4">
-                  <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                  <div className="h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
                     <User className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-900">{profile?.displayName || profile?.email}</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{profile?.displayName || profile?.email}</p>
                     <p className="text-xs text-slate-500 capitalize">{profile?.role}</p>
                   </div>
                 </div>
                 <Button 
                   variant="ghost" 
                   onClick={logout} 
-                  className="w-full justify-start text-red-500 hover:bg-red-50 hover:text-red-600 font-bold gap-3"
+                  className="w-full justify-start text-red-500 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-600 font-bold gap-3"
                 >
                   <LogOut className="w-5 h-5" />
                   Kijelentkezés

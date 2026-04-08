@@ -38,7 +38,7 @@ import { useToast } from './ToastContext';
 type TabType = 'general' | 'notifications' | 'data' | 'profile';
 
 const Settings: React.FC = () => {
-  const { profile, isAdmin } = useFirebase();
+  const { profile } = useFirebase();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('general');
   const [loading, setLoading] = useState(false);
@@ -63,6 +63,36 @@ const Settings: React.FC = () => {
       setSettings(prev => ({ ...prev, ...JSON.parse(savedSettings) }));
     }
   }, []);
+
+  const updateThemePreview = (theme: string) => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else if (theme === 'light') {
+      root.classList.remove('dark');
+    } else {
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.classList.toggle('dark', isDark);
+    }
+  };
+
+  const handleThemeChange = (t: string) => {
+    setSettings({...settings, theme: t});
+    updateThemePreview(t);
+  };
+
+  const updateCompactModePreview = (compact: boolean) => {
+    if (compact) {
+      document.body.classList.add('compact-mode');
+    } else {
+      document.body.classList.remove('compact-mode');
+    }
+  };
+
+  const handleCompactModeChange = (compact: boolean) => {
+    setSettings({...settings, compactMode: compact});
+    updateCompactModePreview(compact);
+  };
 
   const handleSave = () => {
     setLoading(true);
@@ -261,7 +291,7 @@ const Settings: React.FC = () => {
                           {['light', 'dark', 'system'].map((t) => (
                             <button
                               key={t}
-                              onClick={() => setSettings({...settings, theme: t})}
+                              onClick={() => handleThemeChange(t)}
                               className={cn(
                                 "flex-1 py-2 rounded-xl text-xs font-bold border transition-all capitalize",
                                 settings.theme === t 
@@ -347,7 +377,13 @@ const Settings: React.FC = () => {
                           <input 
                             type="checkbox" 
                             checked={(settings as any)[item.id]}
-                            onChange={(e) => setSettings({...settings, [item.id]: e.target.checked})}
+                            onChange={(e) => {
+                              if (item.id === 'compactMode') {
+                                handleCompactModeChange(e.target.checked);
+                              } else {
+                                setSettings({...settings, [item.id]: e.target.checked});
+                              }
+                            }}
                             className="sr-only peer"
                           />
                           <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
