@@ -71,6 +71,14 @@ async function bulkInsert(
   await client.query(sql, values);
 }
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
@@ -83,26 +91,32 @@ async function startServer() {
     next();
   });
 
-  const connectionString =
-  process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
-
-  if (!connectionString) {
-    throw new Error('Missing SUPABASE_DB_URL or DATABASE_URL environment variable');
-  }
+  const dbHost = requireEnv('SUPABASE_DB_HOST');
+  const dbPort = Number(requireEnv('SUPABASE_DB_PORT'));
+  const dbName = requireEnv('SUPABASE_DB_NAME');
+  const dbUser = requireEnv('SUPABASE_DB_USER');
+  const dbPassword = requireEnv('SUPABASE_DB_PASSWORD');
 
   const pool = new Pool({
-    connectionString,
+    host: dbHost,
+    port: dbPort,
+    database: dbName,
+    user: dbUser,
+    password: dbPassword,
     ssl: {
-      rejectUnauthorized: false
-    }
+      rejectUnauthorized: false,
+    },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 15000,
   });
-
 
   try {
     await pool.query('SELECT 1');
     console.log('✅ Connected to Supabase PostgreSQL');
   } catch (error) {
     console.error('❌ Failed to connect to Supabase PostgreSQL:', error);
+    throw error;
   }
 
   const initDb = async () => {
@@ -119,7 +133,6 @@ async function startServer() {
         END
         $$;
       `);
-      
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
@@ -269,6 +282,7 @@ async function startServer() {
       console.log('✅ Database tables initialized');
     } catch (error) {
       console.error('❌ Database initialization failed:', error);
+      throw error;
     }
   };
 
@@ -276,7 +290,11 @@ async function startServer() {
 
   const logActivity = async (userId: string, action: string, details: string) => {
     try {
-      await runExec(pool, 'INSERT INTO audit_logs ("userId", action, details) VALUES (?, ?, ?)', [userId, action, details]);
+      await runExec(pool, 'INSERT INTO audit_logs ("userId", action, details) VALUES (?, ?, ?)', [
+        userId,
+        action,
+        details,
+      ]);
     } catch (error) {
       console.error('Failed to log activity:', error);
     }
@@ -354,7 +372,7 @@ async function startServer() {
 
       if (existing.length === 0) {
         const countRows = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM users');
-        const role = (Number(countRows[0].count) === 0 || email === 'csmucza@gmail.com') ? 'admin' : 'client';
+        const role = Number(countRows[0].count) === 0 || email === 'csmucza@gmail.com' ? 'admin' : 'client';
 
         await runExec(
           pool,
@@ -376,14 +394,20 @@ async function startServer() {
 
       const role = email === 'csmucza@gmail.com' ? 'admin' : existing[0].role;
 
-      await runExec(
-        pool,
-        'UPDATE users SET email = ?, "displayName" = ?, role = ? WHERE uid = ?',
-        [email, displayName ?? null, role, uid]
-      );
+      await runExec(pool, 'UPDATE users SET email = ?, "displayName" = ?, role = ? WHERE uid = ?', [
+        email,
+        displayName ?? null,
+        role,
+        uid,
+      ]);
 
       if (role === 'admin') {
-        const legacyCheck = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM sales WHERE "userId" = ?', ['legacy']);
+        const legacyCheck = await runQuery<{ count: string }>(
+          pool,
+          'SELECT COUNT(*)::text AS count FROM sales WHERE "userId" = ?',
+          ['legacy']
+        );
+
         if (Number(legacyCheck[0].count) > 0) {
           await Promise.all([
             runExec(pool, 'UPDATE sales SET "userId" = ? WHERE "userId" = ?', [uid, 'legacy']),
@@ -671,7 +695,11 @@ async function startServer() {
 
       const { quantity, lead_time } = req.body;
       if (lead_time !== undefined) {
-        await runExec(pool, 'UPDATE stock SET quantity = ?, lead_time = ? WHERE id = ?', [quantity, lead_time, req.params.id]);
+        await runExec(pool, 'UPDATE stock SET quantity = ?, lead_time = ? WHERE id = ?', [
+          quantity,
+          lead_time,
+          req.params.id,
+        ]);
       } else {
         await runExec(pool, 'UPDATE stock SET quantity = ? WHERE id = ?', [quantity, req.params.id]);
       }
@@ -841,8 +869,38 @@ async function startServer() {
         await bulkInsert(
           client,
           'sales',
-          ['date', 'model', 'condition', 'platform', 'quantity', 'buy_price', 'sell_price', 'fees', 'profit', 'buyer', 'city', 'tracking_number', 'notes', 'userId'],
-          data.sales.map((s: any) => [s.date, s.model, s.condition, s.platform, s.quantity, s.buy_price, s.sell_price, s.fees, s.profit, s.buyer, s.city, s.tracking_number, s.notes, s.userId])
+          [
+            'date',
+            'model',
+            'condition',
+            'platform',
+            'quantity',
+            'buy_price',
+            'sell_price',
+            'fees',
+            'profit',
+            'buyer',
+            'city',
+            'tracking_number',
+            'notes',
+            'userId',
+          ],
+          data.sales.map((s: any) => [
+            s.date,
+            s.model,
+            s.condition,
+            s.platform,
+            s.quantity,
+            s.buy_price,
+            s.sell_price,
+            s.fees,
+            s.profit,
+            s.buyer,
+            s.city,
+            s.tracking_number,
+            s.notes,
+            s.userId,
+          ])
         );
       }
 
@@ -859,8 +917,40 @@ async function startServer() {
         await bulkInsert(
           client,
           'pending_sales',
-          ['date', 'model', 'condition', 'platform', 'quantity', 'buy_price', 'sell_price', 'fees', 'profit', 'buyer', 'city', 'tracking_number', 'notes', 'userId', 'status'],
-          data.pending_sales.map((s: any) => [s.date, s.model, s.condition, s.platform, s.quantity, s.buy_price, s.sell_price, s.fees, s.profit, s.buyer, s.city, s.tracking_number, s.notes, s.userId, s.status])
+          [
+            'date',
+            'model',
+            'condition',
+            'platform',
+            'quantity',
+            'buy_price',
+            'sell_price',
+            'fees',
+            'profit',
+            'buyer',
+            'city',
+            'tracking_number',
+            'notes',
+            'userId',
+            'status',
+          ],
+          data.pending_sales.map((s: any) => [
+            s.date,
+            s.model,
+            s.condition,
+            s.platform,
+            s.quantity,
+            s.buy_price,
+            s.sell_price,
+            s.fees,
+            s.profit,
+            s.buyer,
+            s.city,
+            s.tracking_number,
+            s.notes,
+            s.userId,
+            s.status,
+          ])
         );
       }
 
@@ -896,7 +986,10 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true, host: true },
+      server: {
+        middlewareMode: true,
+        host: true,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
