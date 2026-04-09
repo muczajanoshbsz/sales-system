@@ -15,26 +15,48 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { apiService } from '../services/apiService';
+import { useFirebase } from './FirebaseProvider';
 import { subDays, format, startOfMonth, addMonths, isAfter, parseISO, isSameMonth, subMonths } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { Badge } from './ui/Base';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { profile, isAdmin } = useFirebase();
   const [sales, setSales] = useState<Sale[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
   const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'personal' | 'global'>('personal');
 
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
       try {
-        const [salesData, stockData, pendingData] = await Promise.all([
-          apiService.getSales(),
-          apiService.getStock(),
-          apiService.getPendingSales()
-        ]);
+        let salesData, stockData, pendingData;
+        
+        if (isAdmin && viewMode === 'global') {
+          const [s, st, p] = await Promise.all([
+            apiService.getAdminSales(),
+            apiService.getAdminStock(),
+            apiService.getAdminPendingSales()
+          ]);
+          salesData = s;
+          stockData = st;
+          pendingData = p;
+        } else {
+          const [s, st, p] = await Promise.all([
+            apiService.getSales(),
+            apiService.getStock(),
+            apiService.getPendingSales()
+          ]);
+          salesData = s;
+          stockData = st;
+          pendingData = p;
+        }
+
         setSales(salesData);
         setStock(stockData);
         setPendingSales(pendingData);
@@ -46,7 +68,7 @@ const Dashboard: React.FC = () => {
     };
 
     fetchData();
-  }, []);
+  }, [viewMode, isAdmin]);
 
   // Stats Calculations
   const { totalRevenue, totalProfit, totalSales, lowStockCount } = useMemo(() => ({
@@ -136,6 +158,40 @@ const Dashboard: React.FC = () => {
   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   .slice(0, 5), [sales, pendingSales]);
 
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+
+  const fetchDebugInfo = async () => {
+    try {
+      const response = await fetch('/api/debug/migration');
+      const data = await response.json();
+      setDebugInfo(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleManualMigration = async () => {
+    if (!window.confirm('Biztosan át szeretnéd mozgatni az összes gazdátlan adatot a saját fiókodba?')) return;
+    try {
+      const response = await fetch('/api/users/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: profile?.uid,
+          email: profile?.email,
+          displayName: profile?.displayName
+        })
+      });
+      if (response.ok) {
+        alert('Migráció sikeresen lefutott!');
+        window.location.reload();
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Hiba a migráció során');
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>;
 
   return (
@@ -143,10 +199,47 @@ const Dashboard: React.FC = () => {
       {/* Header & Quick Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Vezetői Irányítópult</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Üdvözöljük újra! Itt a mai üzleti áttekintés.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Vezetői Irányítópult</h1>
+            {isAdmin && (
+              <Badge variant={viewMode === 'global' ? 'info' : 'outline'} className="rounded-full px-3 py-1">
+                {viewMode === 'global' ? 'Csapat Nézet' : 'Saját Nézet'}
+              </Badge>
+            )}
+          </div>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">
+            {isAdmin && viewMode === 'global' 
+              ? 'A teljes csapat összesített teljesítményét látod.' 
+              : 'Üdvözöljük újra! Itt a mai üzleti áttekintés.'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
+          {isAdmin && (
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl mr-2">
+              <button
+                onClick={() => setViewMode('personal')}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-bold rounded-lg transition-all",
+                  viewMode === 'personal' 
+                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                )}
+              >
+                Saját
+              </button>
+              <button
+                onClick={() => setViewMode('global')}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-bold rounded-lg transition-all",
+                  viewMode === 'global' 
+                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                )}
+              >
+                Összes
+              </button>
+            </div>
+          )}
           <Button variant="secondary" onClick={() => navigate('/inventory')} className="dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300">
             <Package className="w-4 h-4 mr-2" />
             Készlet
@@ -157,6 +250,44 @@ const Dashboard: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {isAdmin && viewMode === 'personal' && sales.length === 0 && stock.length === 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900/30 p-6 rounded-2xl flex items-start gap-4"
+        >
+          <div className="p-3 bg-indigo-100 dark:bg-indigo-900/40 rounded-xl text-indigo-600 dark:text-indigo-400">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-indigo-900 dark:text-indigo-300">A saját irányítópultod még üres</h3>
+            <p className="text-sm text-indigo-700/70 dark:text-indigo-400/70 mt-1 max-w-2xl">
+              Mivel bekapcsoltuk az adat-szétválasztást, itt csak a saját rögzítéseidet látod. 
+              A korábbi vagy mások által rögzített adatokat a <strong>Rendszerfelügyelet</strong> fülön vagy az <strong>"Összes"</strong> nézetre váltva érheted el.
+            </p>
+            <div className="flex gap-4 mt-4">
+              <Button size="sm" onClick={() => setViewMode('global')} className="bg-indigo-600 hover:bg-indigo-700">
+                Váltás Összesített Nézetre
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => navigate('/sales')} className="text-indigo-600 dark:text-indigo-400">
+                Első saját eladás rögzítése
+              </Button>
+              <Button size="sm" variant="outline" onClick={fetchDebugInfo}>
+                Debug Migráció
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleManualMigration} className="text-amber-600 border-amber-200 hover:bg-amber-50">
+                Kézi Kényszerített Migráció
+              </Button>
+            </div>
+            {debugInfo && (
+              <div className="mt-4 p-4 bg-slate-900 text-slate-100 rounded-xl text-[10px] font-mono overflow-auto max-h-64">
+                <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
 
       {/* KPI Section - Grouped for better spacing */}
       <div className="space-y-6">
@@ -227,11 +358,11 @@ const Dashboard: React.FC = () => {
             <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-indigo-600"></div>
-                <span className="text-slate-500">Bevétel</span>
+                <span className="text-slate-500 dark:text-slate-400">Bevétel</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                <span className="text-slate-500">Profit</span>
+                <span className="text-slate-500 dark:text-slate-400">Profit</span>
               </div>
             </div>
           </div>
@@ -353,7 +484,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-start">
                     <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{activity.model}</p>
-                    <span className="text-[10px] text-slate-400 font-medium uppercase">{formatDate(activity.date)}</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium uppercase">{formatDate(activity.date)}</span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     {activity.type === 'sale' ? 'Sikeres eladás' : 'Függő eladás'} - {activity.platform}
@@ -410,7 +541,7 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, color, tr
         <div className="flex items-start justify-between relative z-10">
           <div className="space-y-3">
             <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{title}</p>
+              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{title}</p>
               <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
             </div>
             

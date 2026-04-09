@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare, ShieldCheck } from 'lucide-react';
 import { Button } from './ui/Base';
 import { useFirebase } from './FirebaseProvider';
 import { logout } from '../firebase';
@@ -24,11 +24,15 @@ const Navbar: React.FC = () => {
     { id: 'settings', path: '/settings', label: 'Beállítások', icon: Settings },
   ];
 
+  if (profile?.role === 'admin') {
+    menuItems.push({ id: 'admin', path: '/admin', label: 'Rendszerfelügyelet', icon: ShieldCheck });
+  }
+
   return (
     <nav className="bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">
-          <div className="flex items-center gap-4 xl:gap-8 min-w-0">
+          <div className="flex items-center gap-4 xl:gap-8 min-w-0 flex-1 mr-4">
             <NavLink to="/" className="flex-shrink-0 flex items-center gap-3 group">
               <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200 group-hover:scale-110 transition-transform duration-300">
                 <Package className="text-white w-6 h-6" />
@@ -38,7 +42,7 @@ const Navbar: React.FC = () => {
               </span>
             </NavLink>
             
-            <div className="hidden lg:flex items-center gap-0.5 xl:gap-1 overflow-hidden">
+            <div className="hidden md:flex items-center gap-0.5 xl:gap-1 overflow-x-auto no-scrollbar py-2 flex-1 min-w-0 mask-fade-right">
               {menuItems.map((item) => (
                 <NavLink
                   key={item.id}
@@ -72,7 +76,7 @@ const Navbar: React.FC = () => {
             {/* Mobile Menu Button */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+              className="md:hidden p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -87,7 +91,7 @@ const Navbar: React.FC = () => {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="lg:hidden bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 overflow-hidden"
+            className="md:hidden bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 overflow-hidden"
           >
             <div className="px-4 py-4 space-y-1">
               {menuItems.map((item) => (

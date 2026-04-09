@@ -80,3 +80,51 @@ export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = (
     {children}
   </select>
 );
+
+export const Badge: React.FC<{ 
+  children: React.ReactNode; 
+  variant?: 'info' | 'success' | 'warning' | 'danger' | 'outline';
+  className?: string;
+}> = ({ children, variant = 'info', className }) => {
+  const variants = {
+    info: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-100 dark:border-blue-800',
+    success: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800',
+    warning: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-100 dark:border-amber-800',
+    danger: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-100 dark:border-red-800',
+    outline: 'bg-transparent text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800',
+  };
+
+  return (
+    <span className={cn(
+      'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold border transition-colors',
+      variants[variant],
+      className
+    )}>
+      {children}
+    </span>
+  );
+};
+
+export const LoadingSpinner: React.FC<{ size?: 'sm' | 'md' | 'lg'; className?: string }> = ({ 
+  size = 'md', 
+  className 
+}) => {
+  const sizes = {
+    sm: 'h-4 w-4',
+    md: 'h-8 w-8',
+    lg: 'h-12 w-12',
+  };
+
+  return (
+    <div className={cn('flex items-center justify-center', className)}>
+      <svg 
+        className={cn('animate-spin text-indigo-600 dark:text-indigo-400', sizes[size])} 
+        fill="none" 
+        viewBox="0 0 24 24"
+      >
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+    </div>
+  );
+};

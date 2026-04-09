@@ -255,4 +255,53 @@ export const apiService = {
     await handleResponse(response);
     return await response.json();
   },
+
+  // Admin Global Methods
+  async getAdminUsers(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/users`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getAdminSales(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/sales`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getAdminStock(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/stock`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getAdminPendingSales(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/pending_sales`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getAdminAuditLogs(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/audit_logs`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getAdminStats(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/stats`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
 };

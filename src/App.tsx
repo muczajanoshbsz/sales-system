@@ -17,12 +17,13 @@ import SearchAnalytics from './components/SearchAnalytics';
 import SalesMap from './components/SalesMap';
 import Settings from './components/Settings';
 import AuditLogs from './components/AuditLogs';
+import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import { Loader2 } from 'lucide-react';
 import React, { useEffect } from 'react';
 
 const AppContent: React.FC = () => {
-  const { user, loading } = useFirebase();
+  const { user, profile, loading } = useFirebase();
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -111,6 +112,7 @@ const AppContent: React.FC = () => {
         <Route path="/search" element={<SearchAnalytics />} />
         <Route path="/audit" element={<AuditLogs />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/admin" element={profile?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
