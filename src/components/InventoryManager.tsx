@@ -60,7 +60,12 @@ const InventoryManager: React.FC = () => {
     
     try {
       if (editingItem) {
-        await apiService.updateStock(editingItem.id!, formData.quantity || 0, formData.lead_time);
+        await apiService.updateStock(
+          editingItem.id!, 
+          formData.quantity || 0, 
+          formData.lead_time,
+          formData.buy_price
+        );
       } else {
         await apiService.addStock(formData as Omit<StockItem, 'id'>);
       }
@@ -175,25 +180,25 @@ const InventoryManager: React.FC = () => {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Beszerzési ár</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest">Beszerzési ár</p>
                     <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCurrency(item.buy_price)}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Összérték</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest">Összérték</p>
                     <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(item.buy_price * item.quantity)}</p>
                   </div>
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-slate-400">
+                    <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
                       <TrendingDown className="w-4 h-4" />
                       <span className="text-xs font-bold uppercase tracking-wider">Napi fogyás</span>
                     </div>
                     <span className="text-sm font-bold text-slate-900 dark:text-white">{prediction.velocity} db</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-slate-400">
+                    <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
                       <Clock className="w-4 h-4" />
                       <span className="text-xs font-bold uppercase tracking-wider">Készlet kitart</span>
                     </div>

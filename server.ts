@@ -886,16 +886,18 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
-      const { quantity, lead_time } = req.body;
-      if (lead_time !== undefined) {
-        await runExec(pool, 'UPDATE stock SET quantity = ?, lead_time = ? WHERE id = ?', [
-          quantity,
-          lead_time,
-          req.params.id,
-        ]);
-      } else {
-        await runExec(pool, 'UPDATE stock SET quantity = ? WHERE id = ?', [quantity, req.params.id]);
-      }
+      const { quantity, lead_time, buy_price } = req.body;
+      
+      await runExec(
+        pool, 
+        'UPDATE stock SET quantity = ?, lead_time = ?, buy_price = ? WHERE id = ?', 
+        [
+          quantity !== undefined ? quantity : item.quantity,
+          lead_time !== undefined ? lead_time : item.lead_time,
+          buy_price !== undefined ? buy_price : item.buy_price,
+          req.params.id
+        ]
+      );
 
       res.json({ success: true });
     } catch (error) {

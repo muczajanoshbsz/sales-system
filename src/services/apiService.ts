@@ -113,11 +113,11 @@ export const apiService = {
     }));
   },
 
-  async updateStock(id: string, quantity: number, lead_time?: number): Promise<void> {
+  async updateStock(id: string, quantity: number, lead_time?: number, buy_price?: number): Promise<void> {
     const response = await fetch(`${API_BASE}/stock/${id}`, {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify({ quantity, lead_time }),
+      body: JSON.stringify({ quantity, lead_time, buy_price }),
     });
     await handleResponse(response);
   },
