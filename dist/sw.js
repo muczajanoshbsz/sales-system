@@ -91,7 +91,7 @@ define(['./workbox-5a5d9309'], (function (workbox) { 'use strict';
     "revision": null
   }, {
     "url": "icon.svg",
-    "revision": "e0bacfd65b25b61f6d42bc59b3830211"
+    "revision": "235b320e785c4b52cff63f243258c396"
   }, {
     "url": "manifest.webmanifest",
     "revision": "d6cc437e01de5c301230bc05cdddef51"
