@@ -1,32 +1,47 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare, ShieldCheck, ChevronDown, Sparkles, Cpu } from 'lucide-react';
 import { Button } from './ui/Base';
 import { useFirebase } from './FirebaseProvider';
 import { logout } from '../firebase';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLocation } from 'react-router-dom';
 
 const Navbar: React.FC = () => {
   const { profile } = useFirebase();
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
-  const menuItems = [
+  const mainItems = [
     { id: 'dashboard', path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'sales', path: '/sales', label: 'Eladások', icon: ShoppingCart },
     { id: 'inventory', path: '/inventory', label: 'Készlet', icon: Package },
     { id: 'procurement', path: '/procurement', label: 'Beszerzés', icon: TrendingUp },
+  ];
+
+  const toolItems = [
     { id: 'ai', path: '/ai', label: 'AI Elemzés', icon: Brain },
     { id: 'assistant', path: '/assistant', label: 'Asszisztens', icon: MessageSquare },
     { id: 'map', path: '/map', label: 'Térkép', icon: MapIcon },
     { id: 'search', path: '/search', label: 'Keresés', icon: Search },
+  ];
+
+  const systemItems = [
     { id: 'audit', path: '/audit', label: 'Napló', icon: Activity },
     { id: 'settings', path: '/settings', label: 'Beállítások', icon: Settings },
   ];
 
   if (profile?.role === 'admin') {
-    menuItems.push({ id: 'admin', path: '/admin', label: 'Rendszerfelügyelet', icon: ShieldCheck });
+    systemItems.push({ id: 'admin', path: '/admin', label: 'Rendszerfelügyelet', icon: ShieldCheck });
   }
+
+  const allItems = [...mainItems, ...toolItems, ...systemItems];
+
+  const isDropdownActive = (items: any[]) => {
+    return items.some(item => location.pathname === item.path);
+  };
 
   return (
     <nav className="bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 transition-colors duration-300">
@@ -42,8 +57,8 @@ const Navbar: React.FC = () => {
               </span>
             </NavLink>
             
-            <div className="hidden md:flex items-center gap-0.5 xl:gap-1 overflow-x-auto no-scrollbar py-2 flex-1 min-w-0 mask-fade-right">
-              {menuItems.map((item) => (
+            <div className="hidden md:flex items-center gap-0.5 xl:gap-1 py-2 flex-1 min-w-0">
+              {mainItems.map((item) => (
                 <NavLink
                   key={item.id}
                   to={item.path}
@@ -58,6 +73,100 @@ const Navbar: React.FC = () => {
                   <span className="hidden xl:inline">{item.label}</span>
                 </NavLink>
               ))}
+
+              {/* Tools Dropdown */}
+              <div 
+                className="relative"
+                onMouseEnter={() => setOpenDropdown('tools')}
+                onMouseLeave={() => setOpenDropdown(null)}
+              >
+                <button
+                  className={cn(
+                    "px-1.5 xl:px-3 py-2 rounded-xl text-[10px] xl:text-[11px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-1.5 shrink-0",
+                    isDropdownActive(toolItems)
+                      ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900"
+                  )}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span className="hidden xl:inline">Eszközök</span>
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", openDropdown === 'tools' && "rotate-180")} />
+                </button>
+
+                <AnimatePresence>
+                  {openDropdown === 'tools' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50"
+                    >
+                      {toolItems.map((item) => (
+                        <NavLink
+                          key={item.id}
+                          to={item.path}
+                          className={({ isActive }) => cn(
+                            "px-4 py-2 text-[11px] font-bold uppercase tracking-wider flex items-center gap-3 transition-colors",
+                            isActive 
+                              ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20" 
+                              : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                          )}
+                        >
+                          <item.icon className="w-4 h-4" />
+                          {item.label}
+                        </NavLink>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* System Dropdown */}
+              <div 
+                className="relative"
+                onMouseEnter={() => setOpenDropdown('system')}
+                onMouseLeave={() => setOpenDropdown(null)}
+              >
+                <button
+                  className={cn(
+                    "px-1.5 xl:px-3 py-2 rounded-xl text-[10px] xl:text-[11px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-1.5 shrink-0",
+                    isDropdownActive(systemItems)
+                      ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900"
+                  )}
+                >
+                  <Cpu className="w-3.5 h-3.5" />
+                  <span className="hidden xl:inline">Rendszer</span>
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", openDropdown === 'system' && "rotate-180")} />
+                </button>
+
+                <AnimatePresence>
+                  {openDropdown === 'system' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute top-full right-0 mt-1 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50"
+                    >
+                      {systemItems.map((item) => (
+                        <NavLink
+                          key={item.id}
+                          to={item.path}
+                          className={({ isActive }) => cn(
+                            "px-4 py-2 text-[11px] font-bold uppercase tracking-wider flex items-center gap-3 transition-colors",
+                            isActive 
+                              ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20" 
+                              : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                          )}
+                        >
+                          <item.icon className="w-4 h-4" />
+                          {item.label}
+                        </NavLink>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
 
@@ -94,7 +203,7 @@ const Navbar: React.FC = () => {
             className="md:hidden bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 overflow-hidden"
           >
             <div className="px-4 py-4 space-y-1">
-              {menuItems.map((item) => (
+              {allItems.map((item) => (
                 <NavLink
                   key={item.id}
                   to={item.path}
