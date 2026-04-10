@@ -197,29 +197,29 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-10 animate-in fade-in duration-700 pb-12">
       {/* Header & Quick Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Vezetői Irányítópult</h1>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="flex-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">Vezetői Irányítópult</h1>
             {isAdmin && (
-              <Badge variant={viewMode === 'global' ? 'info' : 'outline'} className="rounded-full px-3 py-1">
+              <Badge variant={viewMode === 'global' ? 'info' : 'outline'} className="rounded-full px-3 py-1 text-[10px] sm:text-xs">
                 {viewMode === 'global' ? 'Csapat Nézet' : 'Saját Nézet'}
               </Badge>
             )}
           </div>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm sm:text-base">
             {isAdmin && viewMode === 'global' 
               ? 'A teljes csapat összesített teljesítményét látod.' 
               : 'Üdvözöljük újra! Itt a mai üzleti áttekintés.'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {isAdmin && (
-            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl mr-2">
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
               <button
                 onClick={() => setViewMode('personal')}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-bold rounded-lg transition-all",
+                  "px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all",
                   viewMode === 'personal' 
                     ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
                     : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
@@ -230,7 +230,7 @@ const Dashboard: React.FC = () => {
               <button
                 onClick={() => setViewMode('global')}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-bold rounded-lg transition-all",
+                  "px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all",
                   viewMode === 'global' 
                     ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" 
                     : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
@@ -240,14 +240,25 @@ const Dashboard: React.FC = () => {
               </button>
             </div>
           )}
-          <Button variant="secondary" onClick={() => navigate('/inventory')} className="dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300">
-            <Package className="w-4 h-4 mr-2" />
-            Készlet
-          </Button>
-          <Button onClick={() => navigate('/sales')}>
-            <Plus className="w-4 h-4 mr-2" />
-            Új Eladás
-          </Button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button 
+              variant="secondary" 
+              onClick={() => navigate('/inventory')} 
+              className="flex-1 sm:flex-none dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 text-xs sm:text-sm py-2"
+            >
+              <Package className="w-4 h-4 mr-1.5 sm:mr-2" />
+              <span className="hidden xs:inline">Készlet</span>
+              <span className="xs:hidden">Készlet</span>
+            </Button>
+            <Button 
+              onClick={() => navigate('/sales')}
+              className="flex-1 sm:flex-none text-xs sm:text-sm py-2"
+            >
+              <Plus className="w-4 h-4 mr-1.5 sm:mr-2" />
+              <span className="hidden xs:inline">Új Eladás</span>
+              <span className="xs:hidden">Eladás</span>
+            </Button>
+          </div>
         </div>
       </div>
 
