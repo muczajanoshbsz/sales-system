@@ -49,6 +49,14 @@ export interface PendingSale extends Omit<Sale, 'id'> {
   status: 'pending' | 'confirmed' | 'cancelled';
 }
 
+export interface ProductModel {
+  id: number;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AppConfig {
   models: string[];
   conditions: string[];

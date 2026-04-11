@@ -13,14 +13,20 @@ import {
   User as UserIcon,
   Mail,
   Calendar,
-  Filter
+  Filter,
+  BookOpen,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Card, Button, Badge, LoadingSpinner } from './ui/Base';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
+import { ProductModel } from '../types';
 
-type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'logs';
+type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs';
 
 const AdminPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('stats');
@@ -30,6 +36,8 @@ const AdminPanel: React.FC = () => {
   const [sales, setSales] = useState<any[]>([]);
   const [stock, setStock] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [catalogModels, setCatalogModels] = useState<ProductModel[]>([]);
+  const [newModelName, setNewModelName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
@@ -60,6 +68,10 @@ const AdminPanel: React.FC = () => {
           const logsData = await apiService.getAdminAuditLogs();
           setLogs(logsData);
           break;
+        case 'catalog':
+          const catalogData = await apiService.getCatalogModels();
+          setCatalogModels(catalogData);
+          break;
       }
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -82,7 +94,116 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'sales') return sales.filter(s => s.model.toLowerCase().includes(term) || s.userEmail?.toLowerCase().includes(term));
     if (activeTab === 'stock') return stock.filter(s => s.model.toLowerCase().includes(term) || s.userEmail?.toLowerCase().includes(term));
     if (activeTab === 'logs') return logs.filter(l => l.action.toLowerCase().includes(term) || l.userEmail?.toLowerCase().includes(term));
+    if (activeTab === 'catalog') return catalogModels.filter(m => m.name.toLowerCase().includes(term));
     return [];
+  };
+
+  const handleAddCatalogModel = async () => {
+    if (!newModelName.trim()) return;
+    try {
+      await apiService.addCatalogModel(newModelName.trim());
+      setNewModelName('');
+      fetchData();
+    } catch (error) {
+      console.error('Error adding model:', error);
+    }
+  };
+
+  const handleToggleModelStatus = async (id: number, currentStatus: boolean) => {
+    try {
+      await apiService.updateCatalogModel(id, { is_active: !currentStatus });
+      fetchData();
+    } catch (error) {
+      console.error('Error toggling status:', error);
+    }
+  };
+
+  const handleDeleteModel = async (id: number) => {
+    if (!confirm('Biztosan törölni szeretnéd ezt a modellt?')) return;
+    try {
+      await apiService.deleteCatalogModel(id);
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting model:', error);
+    }
+  };
+
+  const renderCatalog = () => {
+    const data = filteredData();
+    
+    return (
+      <div className="space-y-6">
+        <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1">
+              <Plus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Új modell neve (pl. AirPods Pro 3)..."
+                value={newModelName}
+                onChange={(e) => setNewModelName(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              />
+            </div>
+            <Button onClick={handleAddCatalogModel} disabled={!newModelName.trim()}>
+              Hozzáadás
+            </Button>
+          </div>
+        </Card>
+
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Modell Név</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Állapot</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Létrehozva</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 text-right">Műveletek</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {data.map((item: any) => (
+                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">{item.name}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge variant={item.is_active ? 'success' : 'outline'}>
+                        {item.is_active ? 'AKTÍV' : 'INAKTÍV'}
+                      </Badge>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-slate-500 font-mono">
+                      {new Date(item.created_at).toLocaleDateString('hu-HU')}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleToggleModelStatus(item.id, item.is_active)}
+                          className={cn(item.is_active ? "text-amber-500 hover:bg-amber-50" : "text-emerald-500 hover:bg-emerald-50")}
+                        >
+                          {item.is_active ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleDeleteModel(item.id)}
+                          className="text-red-500 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const renderStats = () => (
@@ -374,6 +495,16 @@ const AdminPanel: React.FC = () => {
             Készlet
           </button>
           <button
+            onClick={() => setActiveTab('catalog')}
+            className={cn(
+              "px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+              activeTab === 'catalog' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            )}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            Katalógus
+          </button>
+          <button
             onClick={() => setActiveTab('logs')}
             className={cn(
               "px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
@@ -415,7 +546,7 @@ const AdminPanel: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          {activeTab === 'stats' ? renderStats() : renderTable()}
+          {activeTab === 'stats' ? renderStats() : activeTab === 'catalog' ? renderCatalog() : renderTable()}
         </motion.div>
       )}
     </div>

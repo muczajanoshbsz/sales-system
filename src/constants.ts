@@ -1,7 +1,7 @@
 import { AppConfig } from './types';
 
 export const APP_CONFIG: AppConfig = {
-  models: ["AirPods 2", "AirPods 3", "AirPods 4 ANC", "AirPods Pro", "AirPods Pro 2", "AirPods Pro 3", "AirPods Max", "JBL Pulse 5", "Egyéb"],
+  models: [], // Managed via Admin -> Catalog
   conditions: ["bontatlan", "bontott", "felújított"],
   platforms: ["Vinted", "Jófogás", "Vatera", "Aukro", "Személyes", "Egyéb"],
   thresholds: {

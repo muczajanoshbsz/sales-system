@@ -14,6 +14,7 @@ const AIDashboard: React.FC = () => {
   const [stock, setStock] = useState<StockItem[]>([]);
   const [marketPrices, setMarketPrices] = useState<MarketPrice[]>([]);
   const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
+  const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -36,17 +37,23 @@ const AIDashboard: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [salesData, stockData, marketData, pendingData] = await Promise.all([
+        const [salesData, stockData, marketData, pendingData, modelsData] = await Promise.all([
           apiService.getSales(),
           apiService.getStock(),
           apiService.getMarketPrices(),
-          apiService.getPendingSales()
+          apiService.getPendingSales(),
+          apiService.getActiveModels()
         ]);
         
         setSales(salesData);
         setStock(stockData);
         setMarketPrices(marketData);
         setPendingSales(pendingData);
+        setModels(modelsData);
+        
+        if (modelsData.length > 0 && !pricingForm.model) {
+          setPricingForm(prev => ({ ...prev, model: modelsData[0] }));
+        }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
@@ -179,7 +186,7 @@ const AIDashboard: React.FC = () => {
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Modell</label>
                 <Select value={pricingForm.model} onChange={(e) => setPricingForm({...pricingForm, model: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                  {APP_CONFIG.models.map(m => <option key={m} value={m}>{m}</option>)}
+                  {models.map(m => <option key={m} value={m}>{m}</option>)}
                 </Select>
               </div>
               <div className="space-y-2">
@@ -228,10 +235,10 @@ const AIDashboard: React.FC = () => {
                   <div className="p-6 bg-slate-900 dark:bg-black rounded-2xl text-white">
                     <div className="flex items-center gap-3 mb-4">
                       <DollarSign className="w-5 h-5 text-emerald-400" />
-                      <span className="text-sm font-bold text-slate-400 uppercase tracking-wider">Várható Bevétel</span>
+                      <span className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Várható Bevétel</span>
                     </div>
                     <h3 className="text-4xl font-black">{formatCurrency(pipeline.potential_revenue)}</h3>
-                    <p className="mt-2 text-sm text-slate-400">Várható profit: <span className="text-emerald-400 font-bold">{formatCurrency(pipeline.potential_profit)}</span></p>
+                    <p className="mt-2 text-sm text-slate-400 dark:text-slate-500">Várható profit: <span className="text-emerald-400 font-bold">{formatCurrency(pipeline.potential_profit)}</span></p>
                   </div>
 
                   <div className="p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800">
@@ -288,7 +295,7 @@ const AIDashboard: React.FC = () => {
               <div className="space-y-2">
                 <label className="text-sm font-medium dark:text-slate-300">Modell</label>
                 <Select value={pricingForm.model} onChange={(e) => setPricingForm({...pricingForm, model: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                  {APP_CONFIG.models.map(m => <option key={m} value={m}>{m}</option>)}
+                  {models.map(m => <option key={m} value={m}>{m}</option>)}
                 </Select>
               </div>
               <div className="space-y-2">
@@ -338,7 +345,7 @@ const AIDashboard: React.FC = () => {
               {pricing && (
                 <div className="animate-in fade-in slide-in-from-right-4 duration-500">
                   <div className="bg-slate-900 dark:bg-black rounded-2xl p-6 text-white flex flex-col items-center justify-center text-center h-full">
-                    <p className="text-slate-400 text-[10px] font-bold mb-2 uppercase tracking-widest">Javasolt Eladási Ár</p>
+                    <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold mb-2 uppercase tracking-widest">Javasolt Eladási Ár</p>
                     <h3 className="text-4xl font-black mb-4">{formatCurrency(pricing.final_price)}</h3>
                     <div className="flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold">
                       <Sparkles className="w-3 h-3 text-amber-400" />

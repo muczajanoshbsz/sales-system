@@ -17,6 +17,7 @@ const SalesManager: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
+  const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
@@ -53,14 +54,20 @@ const SalesManager: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [salesData, pendingData, stockData] = await Promise.all([
+      const [salesData, pendingData, stockData, modelsData] = await Promise.all([
         apiService.getSales(),
         apiService.getPendingSales(),
-        apiService.getStock()
+        apiService.getStock(),
+        apiService.getActiveModels()
       ]);
       setSales(salesData);
       setPendingSales(pendingData);
       setStock(stockData);
+      setModels(modelsData);
+      
+      if (modelsData.length > 0 && !formData.model) {
+        setFormData(prev => ({ ...prev, model: modelsData[0] }));
+      }
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
@@ -423,7 +430,7 @@ const SalesManager: React.FC = () => {
             <div className="space-y-2">
               <label className="text-sm font-medium">Modell</label>
               <Select name="model" value={formData.model} onChange={handleInputChange}>
-                {APP_CONFIG.models.map(m => <option key={m} value={m}>{m}</option>)}
+                {models.map(m => <option key={m} value={m}>{m}</option>)}
               </Select>
             </div>
           </div>

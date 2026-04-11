@@ -1,4 +1,4 @@
-import { Sale, PendingSale, StockItem, MarketPrice } from '../types';
+import { Sale, PendingSale, StockItem, MarketPrice, ProductModel } from '../types';
 import { auth } from '../firebase';
 
 const API_BASE = '/api';
@@ -303,5 +303,50 @@ export const apiService = {
     });
     await handleResponse(response);
     return await response.json();
+  },
+
+  // Catalog
+  async getCatalogModels(): Promise<ProductModel[]> {
+    const response = await fetch(`${API_BASE}/catalog/models`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getActiveModels(): Promise<string[]> {
+    const response = await fetch(`${API_BASE}/catalog/active-models`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async addCatalogModel(name: string): Promise<ProductModel> {
+    const response = await fetch(`${API_BASE}/catalog/models`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ name }),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async updateCatalogModel(id: number, data: { name?: string; is_active?: boolean }): Promise<ProductModel> {
+    const response = await fetch(`${API_BASE}/catalog/models/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async deleteCatalogModel(id: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/catalog/models/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
   },
 };

@@ -16,6 +16,7 @@ const InventoryManager: React.FC = () => {
   const navigate = useNavigate();
   const [stock, setStock] = useState<StockItem[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
@@ -30,12 +31,18 @@ const InventoryManager: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [stockData, salesData] = await Promise.all([
+      const [stockData, salesData, modelsData] = await Promise.all([
         apiService.getStock(),
-        apiService.getSales()
+        apiService.getSales(),
+        apiService.getActiveModels()
       ]);
       setStock(stockData);
       setSales(salesData);
+      setModels(modelsData);
+      
+      if (modelsData.length > 0 && !formData.model) {
+        setFormData(prev => ({ ...prev, model: modelsData[0] }));
+      }
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
@@ -248,7 +255,7 @@ const InventoryManager: React.FC = () => {
           <div className="space-y-2">
             <label className="text-sm font-medium">Modell</label>
             <Select name="model" value={formData.model} onChange={handleInputChange}>
-              {APP_CONFIG.models.map(m => <option key={m} value={m}>{m}</option>)}
+              {models.map(m => <option key={m} value={m}>{m}</option>)}
             </Select>
           </div>
           <div className="space-y-2">
