@@ -28,11 +28,17 @@ const AIDashboard: React.FC = () => {
 
   // Form state for pricing
   const [pricingForm, setPricingForm] = useState({
-    model: APP_CONFIG.models[0],
+    model: '',
     condition: APP_CONFIG.conditions[0],
     platform: APP_CONFIG.platforms[0],
     buy_price: 0,
   });
+
+  const filteredMarketPrices = useMemo(() => {
+    return marketPrices
+      .filter(mp => mp.model === pricingForm.model && mp.condition === pricingForm.condition)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [marketPrices, pricingForm.model, pricingForm.condition]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -325,10 +331,7 @@ const AIDashboard: React.FC = () => {
                 </h4>
                 <div className="h-48 bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={useMemo(() => marketPrices
-                      .filter(mp => mp.model === pricingForm.model && mp.condition === pricingForm.condition)
-                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [marketPrices, pricingForm.model, pricingForm.condition])
-                    }>
+                    <LineChart data={filteredMarketPrices}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-slate-800" />
                       <XAxis dataKey="date" hide />
                       <YAxis hide domain={['auto', 'auto']} />

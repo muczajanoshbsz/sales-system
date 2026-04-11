@@ -19,6 +19,7 @@ import Settings from './components/Settings';
 import AuditLogs from './components/AuditLogs';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
 import React, { useEffect } from 'react';
 
@@ -106,7 +107,7 @@ const AppContent: React.FC = () => {
         <Route path="/sales" element={<SalesManager />} />
         <Route path="/inventory" element={<InventoryManager />} />
         <Route path="/procurement" element={<ProcurementManager />} />
-        <Route path="/ai" element={<AIDashboard />} />
+        <Route path="/ai" element={<ErrorBoundary><AIDashboard /></ErrorBoundary>} />
         <Route path="/assistant" element={<BusinessAssistant />} />
         <Route path="/map" element={<SalesMap />} />
         <Route path="/search" element={<SearchAnalytics />} />

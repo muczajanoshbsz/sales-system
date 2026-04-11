@@ -5,7 +5,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number) {
+export function formatCurrency(amount: number | undefined | null) {
+  if (amount === undefined || amount === null || isNaN(amount)) {
+    return '0 Ft';
+  }
   return new Intl.NumberFormat('hu-HU', {
     style: 'currency',
     currency: 'HUF',
