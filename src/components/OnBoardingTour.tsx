@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, CheckCircle2, Sparkles, LayoutDashboard, Package, Bot, ArrowRight } from 'lucide-react';
+import { ChevronRight, CheckCircle2, Sparkles, LayoutDashboard, Package, Bot, ArrowRight, ShoppingCart, TrendingUp, Settings, MessageSquare } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Button } from './ui/Base';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface Step {
   id: string;
@@ -10,6 +11,7 @@ interface Step {
   title: string;
   content: string;
   icon: React.ReactNode;
+  path: string;
 }
 
 interface OnboardingTourProps {
@@ -24,13 +26,31 @@ const steps: Step[] = [
     title: 'A Dashboard',
     content: 'Itt látod a birodalmadat. A grafikonok és statisztikák valós időben mutatják az üzleted állapotát.',
     icon: <LayoutDashboard className="w-5 h-5" />,
+    path: '/',
+  },
+  {
+    id: 'sales',
+    targetId: 'nav-sales',
+    title: 'Eladások Kezelése',
+    content: 'Minden tranzakciód itt szerepel. Átlátható, kereshető és bármikor rögzíthetsz új eladást.',
+    icon: <ShoppingCart className="w-5 h-5" />,
+    path: '/sales',
   },
   {
     id: 'inventory',
     targetId: 'nav-inventory',
-    title: 'Készlet Kezelés',
-    content: 'Itt töltheted fel az új árut és követheted a meglévő raktárkészletet. Próbáld ki később!',
+    title: 'Készlet és Raktár',
+    content: 'Figyeld a színeket! A sárga és piros jelzések szólnak, ha fogytán az áru. Itt töltheted fel az új készletet.',
     icon: <Package className="w-5 h-5" />,
+    path: '/inventory',
+  },
+  {
+    id: 'procurement',
+    targetId: 'nav-procurement',
+    title: 'Beszerzési Trendek',
+    content: 'Kövesd nyomon, mikor és mennyiért szerezted be az árut, hogy optimalizálhasd a profitodat.',
+    icon: <TrendingUp className="w-5 h-5" />,
+    path: '/procurement',
   },
   {
     id: 'ai',
@@ -38,6 +58,23 @@ const steps: Step[] = [
     title: 'AI Asszisztens',
     content: 'Ő a titkos fegyvered. Kérdezz tőle bármit a profitodról vagy kérj tőle üzleti tanácsokat.',
     icon: <Bot className="w-5 h-5" />,
+    path: '/ai',
+  },
+  {
+    id: 'assistant',
+    targetId: 'nav-assistant',
+    title: 'Személyes Segítő',
+    content: 'Bármilyen kérdésed van a rendszer használatával kapcsolatban, itt azonnal választ kapsz.',
+    icon: <MessageSquare className="w-5 h-5" />,
+    path: '/assistant',
+  },
+  {
+    id: 'settings',
+    targetId: 'nav-settings',
+    title: 'Testreszabás',
+    content: 'Szabd saját igényeidre a rendszert! Itt állíthatod be a valutát, az értesítéseket vagy a sötét módot.',
+    icon: <Settings className="w-5 h-5" />,
+    path: '/settings',
   },
 ];
 
@@ -45,16 +82,22 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
   const [currentStep, setCurrentStep] = useState<-1 | number>(-1); // -1 is welcome splash
   const [spotlightRect, setSpotlightRect] = useState<DOMRect | null>(null);
   const [isFinished, setIsFinished] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const updateSpotlight = useCallback(() => {
     if (currentStep >= 0 && currentStep < steps.length) {
       const step = steps[currentStep];
       
-      // Special case for AI step: try to find the link, if not found, target the dropdown button
+      // Special case for dropdown items: try to find the link, if not found, target the dropdown button
       let element = document.getElementById(step.targetId);
       
-      if (!element && step.id === 'ai') {
-        element = document.getElementById('nav-tools-dropdown');
+      if (!element) {
+        // Check if it's in the tools dropdown
+        const toolsDropdownIds = ['nav-ai', 'nav-assistant', 'nav-map', 'nav-search'];
+        if (toolsDropdownIds.includes(step.targetId)) {
+          element = document.getElementById('nav-tools-dropdown');
+        }
       }
 
       if (element) {
@@ -65,21 +108,45 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
     }
   }, [currentStep]);
 
+  // Handle navigation when step changes
   useEffect(() => {
     if (currentStep >= 0 && currentStep < steps.length) {
       const step = steps[currentStep];
-      let element = document.getElementById(step.targetId);
-      if (!element && step.id === 'ai') {
-        element = document.getElementById('nav-tools-dropdown');
-      }
-      
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Wait a bit for scroll to finish before updating spotlight
-        setTimeout(updateSpotlight, 500);
+      if (location.pathname !== step.path) {
+        navigate(step.path);
+        // Reset spotlight while navigating
+        setSpotlightRect(null);
       }
     }
-  }, [currentStep, updateSpotlight]);
+  }, [currentStep, navigate, location.pathname]);
+
+  // Update spotlight when location or step changes
+  useEffect(() => {
+    if (currentStep >= 0 && currentStep < steps.length) {
+      const step = steps[currentStep];
+      
+      // Wait for navigation and rendering
+      const timer = setTimeout(() => {
+        let element = document.getElementById(step.targetId);
+        
+        // Fallback for dropdowns
+        if (!element) {
+          const toolsDropdownIds = ['nav-ai', 'nav-assistant', 'nav-map', 'nav-search'];
+          if (toolsDropdownIds.includes(step.targetId)) {
+            element = document.getElementById('nav-tools-dropdown');
+          }
+        }
+
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Final spotlight update after scroll
+          setTimeout(updateSpotlight, 300);
+        }
+      }, 300);
+
+      return () => clearTimeout(timer);
+    }
+  }, [currentStep, location.pathname, updateSpotlight]);
 
   useEffect(() => {
     updateSpotlight();
@@ -121,7 +188,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
     if (!spotlightRect) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
 
     const cardWidth = 320;
-    const cardHeight = 200; // estimated
+    const cardHeight = 220; // estimated
     const margin = 24;
 
     let top = spotlightRect.bottom + margin;
@@ -150,14 +217,14 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] pointer-events-auto"
-        onClick={skipTour} // Clicking overlay skips tour
+        className="absolute inset-0 bg-slate-950/70 backdrop-blur-[3px] pointer-events-auto"
+        onClick={skipTour}
         style={{
           maskImage: spotlightRect 
-            ? `radial-gradient(circle ${Math.max(spotlightRect.width, spotlightRect.height) / 2 + 10}px at ${spotlightRect.left + spotlightRect.width / 2}px ${spotlightRect.top + spotlightRect.height / 2}px, transparent 99%, black 100%)`
+            ? `radial-gradient(circle ${Math.max(spotlightRect.width, spotlightRect.height) / 2 + 15}px at ${spotlightRect.left + spotlightRect.width / 2}px ${spotlightRect.top + spotlightRect.height / 2}px, transparent 99%, black 100%)`
             : 'none',
           WebkitMaskImage: spotlightRect 
-            ? `radial-gradient(circle ${Math.max(spotlightRect.width, spotlightRect.height) / 2 + 10}px at ${spotlightRect.left + spotlightRect.width / 2}px ${spotlightRect.top + spotlightRect.height / 2}px, transparent 99%, black 100%)`
+            ? `radial-gradient(circle ${Math.max(spotlightRect.width, spotlightRect.height) / 2 + 15}px at ${spotlightRect.left + spotlightRect.width / 2}px ${spotlightRect.top + spotlightRect.height / 2}px, transparent 99%, black 100%)`
             : 'none',
         }}
       />
@@ -183,7 +250,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
                 Üdvözlünk a csapatban, <span className="text-indigo-600 dark:text-indigo-400">{userName}</span>!
               </h2>
               <p className="text-slate-500 dark:text-slate-400 text-center mb-8 leading-relaxed">
-                Készen állsz, hogy profi szinten kezeld a készletet? Hadd mutassuk meg a legfontosabb funkciókat egy gyors túra keretében.
+                Készen állsz, hogy profi szinten kezeld a készletet? Hadd mutassuk meg a legfontosabb funkciókat egy interaktív túra keretében.
               </p>
               
               <div className="flex flex-col gap-3">
@@ -214,9 +281,9 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
         {currentStep >= 0 && currentStep < steps.length && !isFinished && (
           <motion.div
             key={steps[currentStep].id}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: -20 }}
             className="absolute pointer-events-none"
             style={getCardStyle()}
           >
@@ -230,9 +297,16 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
                 </h3>
               </div>
               
-              <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
-                {steps[currentStep].content}
-              </p>
+              <div className="min-h-[60px]">
+                <motion.p 
+                  key={steps[currentStep].content}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6"
+                >
+                  {steps[currentStep].content}
+                </motion.p>
+              </div>
               
               <div className="flex items-center justify-between">
                 <div className="flex gap-1">
@@ -288,7 +362,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
               
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Készen állsz!</h2>
               <p className="text-slate-500 dark:text-slate-400">
-                Sikeresen elvégezted a túrát. Most már minden eszközöd megvan a sikerhez!
+                Sikeresen elvégezted a teljes körutat. Most már minden eszközöd megvan a sikerhez!
               </p>
             </div>
           </motion.div>
