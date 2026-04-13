@@ -18,12 +18,19 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
-  XCircle
+  XCircle,
+  ShieldAlert,
+  Ban,
+  UserCheck,
+  DollarSign,
+  BarChart3,
+  ExternalLink,
+  X
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Card, Button, Badge, LoadingSpinner } from './ui/Base';
-import { motion } from 'motion/react';
-import { cn } from '../lib/utils';
+import { motion, AnimatePresence } from 'motion/react';
+import { cn, formatCurrency } from '../lib/utils';
 import { ProductModel } from '../types';
 
 type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs';
@@ -39,6 +46,9 @@ const AdminPanel: React.FC = () => {
   const [catalogModels, setCatalogModels] = useState<ProductModel[]>([]);
   const [newModelName, setNewModelName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [userInsights, setUserInsights] = useState<any>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -125,6 +135,28 @@ const AdminPanel: React.FC = () => {
       fetchData();
     } catch (error) {
       console.error('Error deleting model:', error);
+    }
+  };
+
+  const handleUpdateUser = async (uid: string, data: any) => {
+    try {
+      await apiService.updateUser(uid, data);
+      fetchData();
+    } catch (error) {
+      console.error('Error updating user:', error);
+    }
+  };
+
+  const handleShowInsights = async (user: any) => {
+    setSelectedUser(user);
+    setInsightsLoading(true);
+    try {
+      const insights = await apiService.getUserInsights(user.uid);
+      setUserInsights(insights);
+    } catch (error) {
+      console.error('Error fetching insights:', error);
+    } finally {
+      setInsightsLoading(false);
     }
   };
 
@@ -302,8 +334,10 @@ const AdminPanel: React.FC = () => {
                 {activeTab === 'users' && (
                   <>
                     <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Felhasználó</th>
+                    <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 text-center">Státusz</th>
                     <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Szerepkör</th>
-                    <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Regisztráció</th>
+                    <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Utolsó Aktivitás</th>
+                    <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 text-right">Műveletek</th>
                   </>
                 )}
                 {activeTab === 'sales' && (
@@ -339,8 +373,13 @@ const AdminPanel: React.FC = () => {
                     <>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                            <UserIcon className="w-4 h-4 text-slate-500" />
+                          <div className="relative">
+                            <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                              <UserIcon className="w-5 h-5 text-slate-500" />
+                            </div>
+                            {item.last_active && (Date.now() - new Date(item.last_active).getTime() < 5 * 60 * 1000) && (
+                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900 rounded-full" />
+                            )}
                           </div>
                           <div>
                             <p className="text-sm font-bold text-slate-900 dark:text-white">{item.displayName || 'Névtelen'}</p>
@@ -348,13 +387,53 @@ const AdminPanel: React.FC = () => {
                           </div>
                         </div>
                       </td>
+                      <td className="px-6 py-4 text-center">
+                        <Badge variant={item.is_suspended ? 'danger' : 'success'}>
+                          {item.is_suspended ? 'TILTOTT' : 'AKTÍV'}
+                        </Badge>
+                      </td>
                       <td className="px-6 py-4">
                         <Badge variant={item.role === 'admin' ? 'warning' : 'info'}>
                           {item.role.toUpperCase()}
                         </Badge>
                       </td>
-                      <td className="px-6 py-4 text-xs text-slate-500 font-mono">
-                        {new Date(item.created_at).toLocaleDateString('hu-HU')}
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            {item.last_active ? new Date(item.last_active).toLocaleString('hu-HU', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 uppercase tracking-tighter">
+                            {item.last_active ? new Date(item.last_active).toLocaleDateString('hu-HU') : 'Soha'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleShowInsights(item)}
+                            title="Részletek"
+                          >
+                            <ExternalLink className="w-4 h-4 text-indigo-500" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleUpdateUser(item.uid, { role: item.role === 'admin' ? 'client' : 'admin' })}
+                            title={item.role === 'admin' ? 'Visszaminősítés' : 'Előléptetés'}
+                          >
+                            <ShieldAlert className={cn("w-4 h-4", item.role === 'admin' ? "text-amber-500" : "text-blue-500")} />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleUpdateUser(item.uid, { is_suspended: !item.is_suspended })}
+                            title={item.is_suspended ? 'Feloldás' : 'Tiltás'}
+                          >
+                            {item.is_suspended ? <UserCheck className="w-4 h-4 text-emerald-500" /> : <Ban className="w-4 h-4 text-red-500" />}
+                          </Button>
+                        </div>
                       </td>
                     </>
                   )}
@@ -549,6 +628,139 @@ const AdminPanel: React.FC = () => {
           {activeTab === 'stats' ? renderStats() : activeTab === 'catalog' ? renderCatalog() : renderTable()}
         </motion.div>
       )}
+
+      <AnimatePresence>
+        {selectedUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                    <UserIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">{selectedUser.displayName || 'Névtelen'}</h2>
+                    <p className="text-sm text-slate-500">{selectedUser.email}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setSelectedUser(null); setUserInsights(null); }}
+                  className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors"
+                >
+                  <X className="w-6 h-6 text-slate-400" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {insightsLoading ? (
+                  <div className="h-64 flex items-center justify-center">
+                    <LoadingSpinner size="lg" />
+                  </div>
+                ) : (
+                  <>
+                    {/* Quick Stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <Card className="p-4 bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30">
+                        <div className="flex items-center gap-3 mb-2">
+                          <DollarSign className="w-4 h-4 text-emerald-600" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Egyéni Profit</span>
+                        </div>
+                        <p className="text-2xl font-mono font-bold text-emerald-600">
+                          {formatCurrency(userInsights?.totalProfit || 0)}
+                        </p>
+                      </Card>
+                      <Card className="p-4 bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/30">
+                        <div className="flex items-center gap-3 mb-2">
+                          <Package className="w-4 h-4 text-blue-600" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-blue-700 dark:text-blue-400">Aktuális Készlet</span>
+                        </div>
+                        <p className="text-2xl font-mono font-bold text-blue-600">
+                          {userInsights?.stock?.reduce((sum: number, i: any) => sum + i.quantity, 0) || 0} db
+                        </p>
+                      </Card>
+                      <Card className="p-4 bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-900/30">
+                        <div className="flex items-center gap-3 mb-2">
+                          <Clock className="w-4 h-4 text-indigo-600" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-400">Utolsó Belépés</span>
+                        </div>
+                        <p className="text-sm font-bold text-indigo-900 dark:text-indigo-300">
+                          {selectedUser.last_login ? new Date(selectedUser.last_login).toLocaleString('hu-HU') : 'Soha'}
+                        </p>
+                      </Card>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Stock Details */}
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                          <Package className="w-4 h-4 text-slate-400" />
+                          Részletes Készlet
+                        </h3>
+                        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 overflow-hidden">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                                <th className="px-4 py-2 font-bold text-slate-500">Modell</th>
+                                <th className="px-4 py-2 font-bold text-slate-500">Állapot</th>
+                                <th className="px-4 py-2 font-bold text-slate-500 text-right">Mennyiség</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {userInsights?.stock?.map((item: any, idx: number) => (
+                                <tr key={idx}>
+                                  <td className="px-4 py-2 font-bold text-slate-700 dark:text-slate-300">{item.model}</td>
+                                  <td className="px-4 py-2 text-slate-500 uppercase tracking-tighter">{item.condition}</td>
+                                  <td className="px-4 py-2 text-right font-mono font-bold text-indigo-600">{item.quantity} db</td>
+                                </tr>
+                              ))}
+                              {(!userInsights?.stock || userInsights.stock.length === 0) && (
+                                <tr>
+                                  <td colSpan={3} className="px-4 py-8 text-center text-slate-400 italic">Nincs készleten lévő termék.</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Activity Logs */}
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4 text-slate-400" />
+                          Utolsó Aktivitások
+                        </h3>
+                        <div className="space-y-3">
+                          {userInsights?.logs?.map((log: any, idx: number) => (
+                            <div key={idx} className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 flex justify-between items-start gap-3">
+                              <div>
+                                <p className="text-xs font-bold text-slate-900 dark:text-white">{log.action}</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">{log.details}</p>
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-400 whitespace-nowrap">
+                                {new Date(log.timestamp).toLocaleString('hu-HU', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          ))}
+                          {(!userInsights?.logs || userInsights.logs.length === 0) && (
+                            <div className="py-8 text-center text-slate-400 text-xs italic">Nincs rögzített aktivitás.</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

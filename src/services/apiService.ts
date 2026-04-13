@@ -305,6 +305,23 @@ export const apiService = {
     return await response.json();
   },
 
+  async updateUser(uid: string, data: { role?: string; is_suspended?: boolean }): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/users/${uid}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    await handleResponse(response);
+  },
+
+  async getUserInsights(uid: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/users/${uid}/insights`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
   // Catalog
   async getCatalogModels(): Promise<ProductModel[]> {
     const response = await fetch(`${API_BASE}/catalog/models`, {

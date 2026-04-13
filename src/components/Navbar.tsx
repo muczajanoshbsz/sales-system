@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 
 const Navbar: React.FC = () => {
-  const { profile } = useFirebase();
+  const { profile, user } = useFirebase();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -172,8 +172,10 @@ const Navbar: React.FC = () => {
 
           <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-4">
             <div className="hidden md:flex flex-col items-end">
-              <span className="text-xs font-bold text-slate-900 dark:text-white uppercase truncate max-w-[120px]">{profile?.displayName || profile?.email}</span>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{profile?.role}</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-white uppercase truncate max-w-[120px]">
+                {profile?.displayName || profile?.email || user?.displayName || user?.email || 'Felhasználó'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{profile?.role || 'Betöltés...'}</span>
             </div>
             <div className="hidden md:flex h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-900 items-center justify-center border border-slate-200/60 dark:border-slate-800 shadow-inner">
               <User className="w-5 h-5 text-slate-600 dark:text-slate-400" />
@@ -230,8 +232,10 @@ const Navbar: React.FC = () => {
                     <User className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">{profile?.displayName || profile?.email}</p>
-                    <p className="text-xs text-slate-500 capitalize">{profile?.role}</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">
+                      {profile?.displayName || profile?.email || user?.displayName || user?.email || 'Felhasználó'}
+                    </p>
+                    <p className="text-xs text-slate-500 capitalize">{profile?.role || 'Betöltés...'}</p>
                   </div>
                 </div>
                 <Button 

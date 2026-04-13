@@ -248,8 +248,32 @@ async function startServer() {
           email VARCHAR(255) NOT NULL,
           role user_role NOT NULL DEFAULT 'client',
           "displayName" VARCHAR(255),
+          is_suspended BOOLEAN NOT NULL DEFAULT FALSE,
+          last_login TIMESTAMPTZ,
+          last_active TIMESTAMPTZ,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        -- Ensure columns exist if table was created earlier
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS "displayName" VARCHAR(255);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active TIMESTAMPTZ;
+
+        -- Add missing columns if they don't exist
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_suspended') THEN
+            ALTER TABLE users ADD COLUMN is_suspended BOOLEAN NOT NULL DEFAULT FALSE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_login') THEN
+            ALTER TABLE users ADD COLUMN last_login TIMESTAMPTZ;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_active') THEN
+            ALTER TABLE users ADD COLUMN last_active TIMESTAMPTZ;
+          END IF;
+        END
+        $$;
 
         -- Ensure userId column exists in all relevant tables
         DO $$
@@ -450,7 +474,7 @@ async function startServer() {
     }
   };
 
-  const getUserContext = async (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  const getUserContext = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const userId = req.headers['x-user-id'] as string | undefined;
 
     if (!userId) {
@@ -459,9 +483,15 @@ async function startServer() {
     }
 
     try {
-      const rows = await runQuery(pool, 'SELECT role FROM users WHERE uid = ?', [userId]);
+      const rows = await runQuery(pool, 'SELECT role, is_suspended FROM users WHERE uid = ?', [userId]);
       if (rows.length > 0) {
+        if (rows[0].is_suspended) {
+          return res.status(403).json({ error: 'Account suspended' });
+        }
         (req as any).user = { uid: userId, role: rows[0].role };
+        
+        // Update last_active asynchronously
+        runExec(pool, 'UPDATE users SET last_active = NOW() WHERE uid = ?', [userId]).catch(err => console.error('Failed to update last_active:', err));
       } else {
         (req as any).user = { uid: userId, role: 'client' };
       }
@@ -534,7 +564,7 @@ async function startServer() {
 
         await runExec(
           pool,
-          'INSERT INTO users (uid, email, "displayName", role) VALUES (?, ?, ?, ?)',
+          'INSERT INTO users (uid, email, "displayName", role, last_login, last_active) VALUES (?, ?, ?, ?, NOW(), NOW())',
           [uid, email, displayName ?? null, role]
         );
 
@@ -550,7 +580,6 @@ async function startServer() {
             const oldAdmins = await runQuery(pool, 'SELECT uid FROM users WHERE (email = ? OR email = ?) AND uid != ?', ['admin@localhost', 'admin@localhost.com', uid]);
             const uidsToMigrate = oldAdmins.map(u => u.uid);
             
-            // Check for data even if user record doesn't exist
             const devSalesCheck = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM sales WHERE "userId" = ?', ['local-dev-user']);
             const devStockCheck = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM stock WHERE "userId" = ?', ['local-dev-user']);
             
@@ -568,59 +597,37 @@ async function startServer() {
             }
           }
         }
+      } else {
+        const role = email === 'csmucza@gmail.com' ? 'admin' : existing[0].role;
+        await runExec(pool, 'UPDATE users SET email = ?, "displayName" = ?, role = ?, last_login = NOW(), last_active = NOW() WHERE uid = ?', [
+          email,
+          displayName ?? null,
+          role,
+          uid,
+        ]);
 
-        return res.json({ uid, email, displayName, role });
-      }
-
-      const role = email === 'csmucza@gmail.com' ? 'admin' : existing[0].role;
-
-      await runExec(pool, 'UPDATE users SET email = ?, "displayName" = ?, role = ? WHERE uid = ?', [
-        email,
-        displayName ?? null,
-        role,
-        uid,
-      ]);
-
-      // Always check for legacy data for admins to ensure they own the initial data
-      if (role === 'admin' && email === 'csmucza@gmail.com') {
-        // 1. Migrate "legacy" records
-        const legacySalesCheck = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM sales WHERE "userId" = ? OR "userId" IS NULL', ['legacy']);
-        const legacyStockCheck = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM stock WHERE "userId" = ? OR "userId" IS NULL', ['legacy']);
-
-        if (Number(legacySalesCheck[0].count) > 0 || Number(legacyStockCheck[0].count) > 0) {
+        if (role === 'admin') {
           await Promise.all([
-            runExec(pool, 'UPDATE sales SET "userId" = ? WHERE "userId" = ? OR "userId" IS NULL', [uid, 'legacy']),
-            runExec(pool, 'UPDATE stock SET "userId" = ? WHERE "userId" = ? OR "userId" IS NULL', [uid, 'legacy']),
-            runExec(pool, 'UPDATE pending_sales SET "userId" = ? WHERE "userId" = ? OR "userId" IS NULL', [uid, 'legacy']),
-            runExec(pool, 'UPDATE audit_logs SET "userId" = ? WHERE "userId" = ? OR "userId" IS NULL', [uid, 'legacy']),
+            runExec(pool, 'UPDATE sales SET "userId" = ? WHERE "userId" = ?', [uid, 'legacy']),
+            runExec(pool, 'UPDATE stock SET "userId" = ? WHERE "userId" = ?', [uid, 'legacy']),
+            runExec(pool, 'UPDATE pending_sales SET "userId" = ? WHERE "userId" = ?', [uid, 'legacy']),
+            runExec(pool, 'UPDATE audit_logs SET "userId" = ? WHERE "userId" = ?', [uid, 'legacy']),
           ]);
         }
-
-        // 2. Migrate from admin@localhost or admin@localhost.com if they exist
-        const oldAdmins = await runQuery(pool, 'SELECT uid FROM users WHERE (email = ? OR email = ?) AND uid != ?', ['admin@localhost', 'admin@localhost.com', uid]);
-        
-        // Also check if "local-dev-user" has data even if not in users table or has different email
-        const devSalesCheck = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM sales WHERE "userId" = ?', ['local-dev-user']);
-        const devStockCheck = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM stock WHERE "userId" = ?', ['local-dev-user']);
-        
-        const uidsToMigrate = oldAdmins.map(u => u.uid);
-        if ((Number(devSalesCheck[0].count) > 0 || Number(devStockCheck[0].count) > 0) && !uidsToMigrate.includes('local-dev-user') && uid !== 'local-dev-user') {
-          uidsToMigrate.push('local-dev-user');
-        }
-
-        if (uidsToMigrate.length > 0) {
-          for (const oldUid of uidsToMigrate) {
-            await Promise.all([
-              runExec(pool, 'UPDATE sales SET "userId" = ? WHERE "userId" = ?', [uid, oldUid]),
-              runExec(pool, 'UPDATE stock SET "userId" = ? WHERE "userId" = ?', [uid, oldUid]),
-              runExec(pool, 'UPDATE pending_sales SET "userId" = ? WHERE "userId" = ?', [uid, oldUid]),
-              runExec(pool, 'UPDATE audit_logs SET "userId" = ? WHERE "userId" = ?', [uid, oldUid]),
-            ]);
-          }
-        }
       }
 
-      res.json({ ...existing[0], email, displayName, role });
+      const finalUser = await runQuery(pool, 'SELECT uid, email, role, "displayName" FROM users WHERE uid = ?', [uid]);
+      if (finalUser.length > 0) {
+        const user = finalUser[0];
+        res.json({
+          uid: user.uid,
+          email: user.email,
+          role: user.role,
+          displayName: user.displayName || user.displayname || null
+        });
+      } else {
+        res.status(404).json({ error: 'User not found after sync' });
+      }
     } catch (error) {
       console.error('❌ User sync error:', error);
       res.status(500).json({ error: (error as Error).message });
@@ -1114,8 +1121,45 @@ async function startServer() {
 
   adminRouter.get('/users', async (_req, res) => {
     try {
-      const rows = await runQuery(pool, 'SELECT uid, email, role, "displayName", created_at FROM users ORDER BY created_at DESC');
+      const rows = await runQuery(pool, 'SELECT * FROM users ORDER BY created_at DESC');
       res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.put('/users/:uid', async (req, res) => {
+    try {
+      const { role, is_suspended } = req.body;
+      const { uid } = req.params;
+      
+      await runExec(
+        pool, 
+        'UPDATE users SET role = COALESCE(?, role), is_suspended = COALESCE(?, is_suspended) WHERE uid = ?',
+        [role, is_suspended, uid]
+      );
+      
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.get('/users/:uid/insights', async (req, res) => {
+    try {
+      const { uid } = req.params;
+      
+      const [profitRows, stockRows, logRows] = await Promise.all([
+        runQuery<{ total_profit: string }>(pool, 'SELECT SUM(profit)::text as total_profit FROM sales WHERE "userId" = ?', [uid]),
+        runQuery(pool, 'SELECT model, condition, quantity FROM stock WHERE "userId" = ? AND quantity > 0', [uid]),
+        runQuery(pool, 'SELECT * FROM audit_logs WHERE "userId" = ? ORDER BY timestamp DESC LIMIT 20', [uid])
+      ]);
+      
+      res.json({
+        totalProfit: Number(profitRows[0]?.total_profit || 0),
+        stock: stockRows,
+        logs: logRows
+      });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
