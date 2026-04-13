@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare, ShieldCheck, ChevronDown, Sparkles, Cpu } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare, ShieldCheck, ChevronDown, Sparkles, Cpu, Database } from 'lucide-react';
 import { Button } from './ui/Base';
 import { useFirebase } from './FirebaseProvider';
 import { logout } from '../firebase';
@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 
 const Navbar: React.FC = () => {
-  const { profile, user, ghostMode } = useFirebase();
+  const { profile, user, ghostMode, timeTravel } = useFirebase();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -35,6 +35,7 @@ const Navbar: React.FC = () => {
 
   if (profile?.role === 'admin') {
     systemItems.push({ id: 'admin', path: '/admin', label: 'Rendszerfelügyelet', icon: ShieldCheck });
+    systemItems.push({ id: 'backups', path: '/admin?tab=backups', label: 'Mentés', icon: Database });
   }
 
   const allItems = [...mainItems, ...toolItems, ...systemItems];
@@ -46,7 +47,7 @@ const Navbar: React.FC = () => {
   return (
     <nav className={cn(
       "bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 sticky z-40 transition-all duration-300",
-      ghostMode.isActive ? "top-12" : "top-0"
+      (ghostMode.isActive || timeTravel.isActive) ? "top-12" : "top-0"
     )}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">

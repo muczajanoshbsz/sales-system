@@ -18,6 +18,13 @@ interface FirebaseContextType {
   };
   enterGhostMode: (targetUser: { uid: string; displayName?: string; email: string }, readOnly?: boolean) => void;
   exitGhostMode: () => void;
+  timeTravel: {
+    isActive: boolean;
+    backupId: string | null;
+    backupDate: string | null;
+  };
+  enterTimeTravel: (backupId: string, backupDate: string) => void;
+  exitTimeTravel: () => void;
 }
 
 const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
@@ -36,6 +43,38 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     targetUser: sessionStorage.getItem('ghost_user_data') ? JSON.parse(sessionStorage.getItem('ghost_user_data')!) : null,
     readOnly: sessionStorage.getItem('ghost_mode_readonly') === 'true',
   });
+
+  const [timeTravel, setTimeTravel] = useState<{
+    isActive: boolean;
+    backupId: string | null;
+    backupDate: string | null;
+  }>({
+    isActive: !!sessionStorage.getItem('time_travel_backup_id'),
+    backupId: sessionStorage.getItem('time_travel_backup_id'),
+    backupDate: sessionStorage.getItem('time_travel_backup_date'),
+  });
+
+  const enterTimeTravel = (backupId: string, backupDate: string) => {
+    sessionStorage.setItem('time_travel_backup_id', backupId);
+    sessionStorage.setItem('time_travel_backup_date', backupDate);
+    setTimeTravel({
+      isActive: true,
+      backupId,
+      backupDate,
+    });
+    window.location.reload();
+  };
+
+  const exitTimeTravel = () => {
+    sessionStorage.removeItem('time_travel_backup_id');
+    sessionStorage.removeItem('time_travel_backup_date');
+    setTimeTravel({
+      isActive: false,
+      backupId: null,
+      backupDate: null,
+    });
+    window.location.reload();
+  };
 
   const enterGhostMode = (targetUser: { uid: string; displayName?: string; email: string }, readOnly: boolean = true) => {
     sessionStorage.setItem('ghost_user_id', targetUser.uid);
@@ -142,6 +181,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     ghostMode,
     enterGhostMode,
     exitGhostMode,
+    timeTravel,
+    enterTimeTravel,
+    exitTimeTravel,
   };
 
   return <FirebaseContext.Provider value={value}>{children}</FirebaseContext.Provider>;

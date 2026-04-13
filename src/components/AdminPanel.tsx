@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Users, 
   ShoppingCart, 
@@ -26,7 +27,15 @@ import {
   BarChart3,
   ExternalLink,
   X,
-  Ghost
+  Ghost,
+  Database,
+  Download,
+  Upload,
+  History,
+  FileJson,
+  FileSpreadsheet,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Card, Button, Badge, LoadingSpinner } from './ui/Base';
@@ -37,10 +46,13 @@ import { ProductModel } from '../types';
 
 import { GhostModeModal } from './GhostModeModal';
 
-type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs';
+type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups';
 
 const AdminPanel: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('stats');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get('tab') as Tab) || 'stats';
+  const setActiveTab = (tab: Tab) => setSearchParams({ tab });
+
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
@@ -48,6 +60,7 @@ const AdminPanel: React.FC = () => {
   const [stock, setStock] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [catalogModels, setCatalogModels] = useState<ProductModel[]>([]);
+  const [backups, setBackups] = useState<any[]>([]);
   const [newModelName, setNewModelName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -55,7 +68,7 @@ const AdminPanel: React.FC = () => {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [ghostModalOpen, setGhostModalOpen] = useState(false);
   const [ghostTarget, setGhostTarget] = useState<any>(null);
-  const { enterGhostMode } = useFirebase();
+  const { enterGhostMode, enterTimeTravel } = useFirebase();
 
   useEffect(() => {
     fetchData();
@@ -89,6 +102,10 @@ const AdminPanel: React.FC = () => {
           const catalogData = await apiService.getCatalogModels();
           setCatalogModels(catalogData);
           break;
+        case 'backups':
+          const backupsData = await apiService.getBackups();
+          setBackups(backupsData);
+          break;
       }
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -103,6 +120,8 @@ const AdminPanel: React.FC = () => {
       if (activeTab === 'sales') return sales;
       if (activeTab === 'stock') return stock;
       if (activeTab === 'logs') return logs;
+      if (activeTab === 'catalog') return catalogModels;
+      if (activeTab === 'backups') return backups;
       return [];
     }
     
@@ -539,6 +558,195 @@ const AdminPanel: React.FC = () => {
     );
   };
 
+  const renderBackups = () => (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="p-6 bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-900/30">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+              <Database className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">Manuális Mentés</h3>
+              <p className="text-xs text-slate-500">Azonnali rendszermentés</p>
+            </div>
+          </div>
+          <Button 
+            className="w-full gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
+            onClick={async () => {
+              try {
+                await apiService.createBackup();
+                fetchData();
+              } catch (error) {
+                alert('Mentés sikertelen');
+              }
+            }}
+          >
+            <Plus className="w-4 h-4" />
+            Mentés Indítása
+          </Button>
+        </Card>
+
+        <Card className="p-6 bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+              <FileSpreadsheet className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">Adat Export</h3>
+              <p className="text-xs text-slate-500">Excel formátumú letöltés</p>
+            </div>
+          </div>
+          <Button 
+            variant="outline"
+            className="w-full gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+            onClick={() => apiService.exportData('xlsx')}
+          >
+            <Download className="w-4 h-4" />
+            XLSX Letöltése
+          </Button>
+        </Card>
+
+        <Card className="p-6 bg-amber-50/50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/30">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <FileJson className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">JSON Export</h3>
+              <p className="text-xs text-slate-500">Fejlesztői adatmentés</p>
+            </div>
+          </div>
+          <Button 
+            variant="outline"
+            className="w-full gap-2 border-amber-200 text-amber-700 hover:bg-emerald-50"
+            onClick={() => apiService.exportData('json')}
+          >
+            <Download className="w-4 h-4" />
+            JSON Letöltése
+          </Button>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden border-slate-200 dark:border-slate-800">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <History className="w-5 h-5 text-slate-400" />
+            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Mentési Előzmények</h3>
+          </div>
+          <Badge variant="outline" className="text-[10px] uppercase tracking-widest">Utolsó 50 mentés</Badge>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Időpont</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Típus</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Méret</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Készítette</th>
+                <th className="px-6 py-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">Műveletek</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {backups.map((backup) => (
+                <tr key={backup.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">
+                        {new Date(backup.created_at).toLocaleString('hu-HU')}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">{backup.filename}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <Badge variant={backup.type === 'auto' ? 'info' : 'outline'} className="text-[10px] uppercase tracking-tighter">
+                      {backup.type === 'auto' ? 'Automatikus' : 'Manuális'}
+                    </Badge>
+                  </td>
+                  <td className="px-6 py-4 text-sm font-mono text-slate-500">
+                    {(backup.size / 1024).toFixed(2)} KB
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 italic">
+                    {backup.created_by}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-indigo-600 hover:bg-indigo-50"
+                        onClick={() => enterTimeTravel(backup.id.toString(), backup.created_at)}
+                        title="Time Travel (Betekintés)"
+                      >
+                        <Clock className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-emerald-600 hover:bg-emerald-50"
+                        onClick={() => apiService.downloadBackup(backup.id)}
+                        title="Letöltés"
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-red-600 hover:bg-red-50"
+                        onClick={async () => {
+                          if (confirm('FIGYELEM! A rendszer visszaállítása felülírja a jelenlegi adatokat. Biztosan folytatod?')) {
+                            try {
+                              await apiService.restoreBackup(backup.id);
+                              alert('Rendszer sikeresen visszaállítva');
+                              window.location.reload();
+                            } catch (error) {
+                              alert('Visszaállítás sikertelen');
+                            }
+                          }
+                        }}
+                        title="Visszaállítás"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {backups.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                    Még nem készült biztonsági mentés.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div className="p-6 bg-amber-50 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-900/30 flex items-start gap-4">
+        <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-xl">
+          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+        </div>
+        <div>
+          <h4 className="text-sm font-black text-amber-900 dark:text-amber-400 uppercase tracking-wider mb-1">Biztonsági Figyelmeztetés</h4>
+          <p className="text-xs text-amber-800 dark:text-amber-500 leading-relaxed">
+            A rendszer visszaállítása egy korábbi mentésből <strong>visszafordíthatatlan folyamat</strong>. A jelenlegi adatok elvesznek, és a mentéskori állapot lép a helyükbe. Javasoljuk, hogy visszaállítás előtt készíts egy friss manuális mentést a jelenlegi állapotról.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'stats': return renderStats();
+      case 'catalog': return renderCatalog();
+      case 'backups': return renderBackups();
+      default: return renderTable();
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
@@ -560,6 +768,16 @@ const AdminPanel: React.FC = () => {
           >
             <TrendingUp className="w-3.5 h-3.5" />
             Statisztika
+          </button>
+          <button
+            onClick={() => setActiveTab('backups')}
+            className={cn(
+              "px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+              activeTab === 'backups' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            )}
+          >
+            <Database className="w-3.5 h-3.5" />
+            Mentés
           </button>
           <button
             onClick={() => setActiveTab('users')}
@@ -643,7 +861,7 @@ const AdminPanel: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          {activeTab === 'stats' ? renderStats() : activeTab === 'catalog' ? renderCatalog() : renderTable()}
+          {renderContent()}
         </motion.div>
       )}
 

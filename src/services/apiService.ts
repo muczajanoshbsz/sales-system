@@ -14,12 +14,17 @@ const getHeaders = () => {
   // Ghost Mode Headers
   const ghostUserId = sessionStorage.getItem('ghost_user_id');
   const ghostReadOnly = sessionStorage.getItem('ghost_mode_readonly');
+  const backupId = sessionStorage.getItem('time_travel_backup_id');
   
   if (ghostUserId) {
     headers['x-ghost-user-id'] = ghostUserId;
     if (ghostReadOnly === 'true') {
       headers['x-ghost-mode-readonly'] = 'true';
     }
+  }
+
+  if (backupId) {
+    headers['x-backup-id'] = backupId;
   }
   
   return headers;
@@ -390,5 +395,61 @@ export const apiService = {
       headers: getHeaders(),
     });
     await handleResponse(response);
+  },
+
+  // Backups
+  async getBackups(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/backups`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async createBackup(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/backups/create`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async restoreBackup(id: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/backups/restore/${id}`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+  },
+
+  async downloadBackup(id: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/backups/download/${id}`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup-${id}.json`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+  },
+
+  async exportData(format: 'json' | 'xlsx'): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/export/${format}`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `export-${new Date().toISOString().split('T')[0]}.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
   },
 };

@@ -372,4 +372,3 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ userName, onComp
   );
 };
 
-export default OnboardingTour;

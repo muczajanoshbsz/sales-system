@@ -20,8 +20,9 @@ import AuditLogs from './components/AuditLogs';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
-import { OnboardingTour } from './components/OnBoardingTour';
+import {OnboardingTour} from './components/OnBoardingtour.tsx';
 import { GhostBar } from './components/GhostBar';
+import { TimeTravelBar } from './components/TimeTravelBar';
 import { logout } from './firebase';
 import { Ghost } from 'lucide-react';
 import { Button } from './components/ui/Base';
@@ -31,7 +32,7 @@ import { cn } from './lib/utils';
 import React, { useEffect } from 'react';
 
 const AppContent: React.FC = () => {
-  const { user, profile, loading, isSuspended, completeOnboarding, ghostMode } = useFirebase();
+  const { user, profile, loading, isSuspended, completeOnboarding, ghostMode, timeTravel } = useFirebase();
   const [showTeleport, setShowTeleport] = React.useState(false);
 
   React.useEffect(() => {
@@ -142,7 +143,7 @@ const AppContent: React.FC = () => {
   return (
     <div className={cn(
       "min-h-screen transition-all duration-500",
-      ghostMode.isActive && "ring-4 ring-indigo-500/30 ring-inset pt-12"
+      (ghostMode.isActive || timeTravel.isActive) && "ring-4 ring-indigo-500/30 ring-inset pt-12"
     )}>
       <AnimatePresence>
         {showTeleport && (
@@ -203,8 +204,9 @@ const AppContent: React.FC = () => {
       </AnimatePresence>
 
       <GhostBar />
+      <TimeTravelBar />
       <Layout>
-        {ghostMode.isActive && (
+        {(ghostMode.isActive || timeTravel.isActive) && (
           <div className="fixed inset-0 pointer-events-none z-[9999] bg-indigo-500/5 mix-blend-overlay" />
         )}
         <AnimatePresence>
