@@ -21,7 +21,7 @@ import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
 import { OnboardingTour } from './components/OnBoardingTour';
-import { GhostBar } from './components/GohstBar';
+import { GhostBar } from './components/GhostBar';
 import { logout } from './firebase';
 import { Ghost } from 'lucide-react';
 import { Button } from './components/ui/Base';

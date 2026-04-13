@@ -35,6 +35,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn, formatCurrency } from '../lib/utils';
 import { ProductModel } from '../types';
 
+import { GhostModeModal } from './GhostModeModal';
+
 type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs';
 
 const AdminPanel: React.FC = () => {
@@ -51,6 +53,8 @@ const AdminPanel: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userInsights, setUserInsights] = useState<any>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [ghostModalOpen, setGhostModalOpen] = useState(false);
+  const [ghostTarget, setGhostTarget] = useState<any>(null);
   const { enterGhostMode } = useFirebase();
 
   useEffect(() => {
@@ -416,9 +420,8 @@ const AdminPanel: React.FC = () => {
                             variant="ghost" 
                             size="sm" 
                             onClick={() => {
-                              if (confirm(`Biztosan be szeretnél lépni ${item.displayName || item.email} fiókjába Ghost módban?`)) {
-                                enterGhostMode({ uid: item.uid, displayName: item.displayName, email: item.email }, true);
-                              }
+                              setGhostTarget(item);
+                              setGhostModalOpen(true);
                             }}
                             title="Ghost Mode (Betekintés)"
                           >
@@ -776,6 +779,22 @@ const AdminPanel: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <GhostModeModal
+        isOpen={ghostModalOpen}
+        onClose={() => setGhostModalOpen(false)}
+        onConfirm={(readOnly) => {
+          if (ghostTarget) {
+            enterGhostMode({ 
+              uid: ghostTarget.uid, 
+              displayName: ghostTarget.displayName, 
+              email: ghostTarget.email 
+            }, readOnly);
+          }
+          setGhostModalOpen(false);
+        }}
+        targetUser={ghostTarget || { email: '' }}
+      />
     </div>
   );
 };
