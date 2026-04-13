@@ -10,6 +10,7 @@ interface FirebaseContextType {
   loading: boolean;
   isAdmin: boolean;
   isSuspended: boolean;
+  completeOnboarding: () => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
@@ -79,12 +80,24 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, []);
 
+  const completeOnboarding = async () => {
+    try {
+      await apiService.completeOnboarding();
+      if (profile) {
+        setProfile({ ...profile, has_seen_onboarding: true });
+      }
+    } catch (error) {
+      console.error('Failed to complete onboarding:', error);
+    }
+  };
+
   const value = {
     user,
     profile,
     loading,
     isAdmin: profile?.role === 'admin',
     isSuspended,
+    completeOnboarding,
   };
 
   return <FirebaseContext.Provider value={value}>{children}</FirebaseContext.Provider>;

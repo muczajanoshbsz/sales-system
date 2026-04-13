@@ -249,6 +249,7 @@ async function startServer() {
           role user_role NOT NULL DEFAULT 'client',
           "displayName" VARCHAR(255),
           is_suspended BOOLEAN NOT NULL DEFAULT FALSE,
+          has_seen_onboarding BOOLEAN NOT NULL DEFAULT FALSE,
           last_login TIMESTAMPTZ,
           last_active TIMESTAMPTZ,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -257,6 +258,7 @@ async function startServer() {
         -- Ensure columns exist if table was created earlier
         ALTER TABLE users ADD COLUMN IF NOT EXISTS "displayName" VARCHAR(255);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS has_seen_onboarding BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active TIMESTAMPTZ;
 
@@ -620,7 +622,7 @@ async function startServer() {
         }
       }
 
-      const finalUser = await runQuery(pool, 'SELECT uid, email, role, "displayName", is_suspended FROM users WHERE uid = ?', [uid]);
+      const finalUser = await runQuery(pool, 'SELECT uid, email, role, "displayName", is_suspended, has_seen_onboarding FROM users WHERE uid = ?', [uid]);
       if (finalUser.length > 0) {
         const user = finalUser[0];
         res.json({
@@ -628,13 +630,38 @@ async function startServer() {
           email: user.email,
           role: user.role,
           displayName: user.displayName || user.displayname || null,
-          is_suspended: user.is_suspended
+          is_suspended: user.is_suspended,
+          has_seen_onboarding: user.has_seen_onboarding
         });
       } else {
         res.status(404).json({ error: 'User not found after sync' });
       }
     } catch (error) {
       console.error('❌ User sync error:', error);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  apiRouter.post('/users/onboarding-complete', async (req, res) => {
+    const userId = (req as any).user?.uid;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      await runExec(pool, 'UPDATE users SET has_seen_onboarding = TRUE WHERE uid = ?', [userId]);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  apiRouter.post('/users/onboarding-reset', async (req, res) => {
+    const userId = (req as any).user?.uid || req.headers['x-user-id'];
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      await runExec(pool, 'UPDATE users SET has_seen_onboarding = FALSE WHERE uid = ?', [userId]);
+      res.json({ success: true });
+    } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
   });

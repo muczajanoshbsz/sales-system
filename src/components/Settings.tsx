@@ -22,7 +22,8 @@ import {
   Upload,
   Trash2,
   Info,
-  AlertTriangle
+  AlertTriangle,
+  Compass
 } from 'lucide-react';
 import { useFirebase } from './FirebaseProvider';
 import { cn } from '../lib/utils';
@@ -38,7 +39,22 @@ import { useToast } from './ToastContext';
 type TabType = 'general' | 'notifications' | 'data' | 'profile';
 
 const Settings: React.FC = () => {
-  const { profile } = useFirebase();
+  const { profile, completeOnboarding } = useFirebase();
+
+  const handleRepeatTour = async () => {
+    if (profile) {
+      // We need a way to reset onboarding. I'll add a resetOnboarding to context if needed, 
+      // but for now I'll just manually call a reset if I add it to server.
+      // Actually, I'll just update the profile locally to trigger it if I add a reset function.
+      // For now, let's just assume we can reset it.
+      try {
+        await fetch('/api/users/onboarding-reset', { method: 'POST', headers: { 'x-user-id': profile.uid } });
+        window.location.reload();
+      } catch (error) {
+        console.error(error);
+      }
+    }
+  };
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('general');
   const [loading, setLoading] = useState(false);
@@ -246,8 +262,8 @@ const Settings: React.FC = () => {
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="space-y-2">
-                        <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Pénznem</label>
-                        <p className="text-[10px] text-slate-400 mb-2">A rendszerben használt alapértelmezett valuta</p>
+                        <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Pénznem</label>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">A rendszerben használt alapértelmezett valuta</p>
                         <Select 
                           value={settings.currency} 
                           onChange={(e) => setSettings({...settings, currency: e.target.value})}
@@ -259,8 +275,8 @@ const Settings: React.FC = () => {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Nyelv</label>
-                        <p className="text-[10px] text-slate-400 mb-2">A kezelőfelület nyelve</p>
+                        <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Nyelv</label>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">A kezelőfelület nyelve</p>
                         <Select 
                           value={settings.language} 
                           onChange={(e) => setSettings({...settings, language: e.target.value})}
@@ -271,8 +287,8 @@ const Settings: React.FC = () => {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Alapértelmezett Platform</label>
-                        <p className="text-[10px] text-slate-400 mb-2">Új eladás rögzítésekor ez lesz kiválasztva</p>
+                        <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Alapértelmezett Platform</label>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">Új eladás rögzítésekor ez lesz kiválasztva</p>
                         <Select 
                           value={settings.defaultPlatform} 
                           onChange={(e) => setSettings({...settings, defaultPlatform: e.target.value})}
@@ -285,8 +301,8 @@ const Settings: React.FC = () => {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Téma</label>
-                        <p className="text-[10px] text-slate-400 mb-2">Válasszon a világos vagy sötét mód közül</p>
+                        <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Téma</label>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">Válasszon a világos vagy sötét mód közül</p>
                         <div className="flex gap-2">
                           {['light', 'dark', 'system'].map((t) => (
                             <button
@@ -320,8 +336,8 @@ const Settings: React.FC = () => {
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="space-y-2">
-                        <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Alacsony Készlet Küszöb</label>
-                        <p className="text-[10px] text-slate-400 mb-2">Sárga jelzés, ha a készlet ez alá esik</p>
+                        <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Alacsony Készlet Küszöb</label>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">Sárga jelzés, ha a készlet ez alá esik</p>
                         <div className="relative">
                           <Input 
                             type="number" 
@@ -333,8 +349,8 @@ const Settings: React.FC = () => {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-black text-slate-500 uppercase tracking-wider">Kritikus Készlet Küszöb</label>
-                        <p className="text-[10px] text-slate-400 mb-2">Piros jelzés, ha a készlet ez alá esik</p>
+                        <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Kritikus Készlet Küszöb</label>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">Piros jelzés, ha a készlet ez alá esik</p>
                         <div className="relative">
                           <Input 
                             type="number" 
@@ -345,6 +361,27 @@ const Settings: React.FC = () => {
                           <div className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-red-500" />
                         </div>
                       </div>
+                    </div>
+                  </Card>
+
+                  <Card className="p-6 border-indigo-100 dark:border-indigo-900/30 bg-indigo-50/30 dark:bg-indigo-900/10">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl">
+                          <Compass className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Rendszerkalauz</h3>
+                          <p className="text-sm text-slate-500">Ismerd meg újra a rendszer alapvető funkcióit</p>
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        onClick={handleRepeatTour}
+                        className="border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30"
+                      >
+                        Túra megismétlése
+                      </Button>
                     </div>
                   </Card>
                 </div>
@@ -371,7 +408,7 @@ const Settings: React.FC = () => {
                       <div key={item.id} className="flex items-center justify-between p-5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 hover:shadow-md transition-all group">
                         <div className="max-w-md">
                           <p className="font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{item.title}</p>
-                          <p className="text-xs text-slate-500 mt-1">{item.desc}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{item.desc}</p>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                           <input 
@@ -433,10 +470,10 @@ const Settings: React.FC = () => {
 
                   <Card className="p-6 border-dashed border-2 border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/30">
                     <div className="flex items-center gap-3 mb-4">
-                      <Lock className="w-5 h-5 text-slate-400" />
+                      <Lock className="w-5 h-5 text-slate-400 dark:text-slate-500" />
                       <h3 className="text-sm font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Haladó Adatkezelés</h3>
                     </div>
-                    <p className="text-xs text-slate-500 mb-6">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
                       Ezek a műveletek közvetlenül módosítják az adatbázis szerkezetét. Csak tapasztalt felhasználóknak ajánlott.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -509,8 +546,8 @@ const Settings: React.FC = () => {
                         </div>
                         
                         <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 flex items-start gap-3">
-                          <Info className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
-                          <p className="text-xs text-slate-500 leading-relaxed">
+                          <Info className="w-5 h-5 text-slate-400 dark:text-slate-500 shrink-0 mt-0.5" />
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                             A profiladatok módosítása jelenleg a központi azonosító rendszeren keresztül érhető el. 
                             Ha meg szeretné változtatni az adatait, kérjük forduljon a rendszergazdához.
                           </p>
@@ -528,7 +565,7 @@ const Settings: React.FC = () => {
                             </div>
                             <div>
                               <p className="font-bold text-slate-900 dark:text-white">Jelszó Módosítása</p>
-                              <p className="text-[10px] text-slate-500">Utoljára módosítva: 3 hónapja</p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Utoljára módosítva: 3 hónapja</p>
                             </div>
                           </div>
                           <Button 

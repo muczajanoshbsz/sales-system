@@ -20,13 +20,15 @@ import AuditLogs from './components/AuditLogs';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
+import { OnboardingTour } from './components/OnBoardingTour';
 import { logout } from './firebase';
 import { Button } from './components/ui/Base';
 import { Loader2, Lock } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
 import React, { useEffect } from 'react';
 
 const AppContent: React.FC = () => {
-  const { user, profile, loading, isSuspended } = useFirebase();
+  const { user, profile, loading, isSuspended, completeOnboarding } = useFirebase();
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -122,6 +124,14 @@ const AppContent: React.FC = () => {
 
   return (
     <Layout>
+      <AnimatePresence>
+        {profile && !profile.has_seen_onboarding && (
+          <OnboardingTour 
+            userName={profile.displayName || profile.email.split('@')[0]} 
+            onComplete={completeOnboarding}
+          />
+        )}
+      </AnimatePresence>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/sales" element={<SalesManager />} />

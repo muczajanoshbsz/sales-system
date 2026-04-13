@@ -62,6 +62,7 @@ const Navbar: React.FC = () => {
                 <NavLink
                   key={item.id}
                   to={item.path}
+                  id={`nav-${item.id}`}
                   className={({ isActive }) => cn(
                     "px-1.5 xl:px-3 py-2 rounded-xl text-[10px] xl:text-[11px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-1.5 shrink-0",
                     isActive 
@@ -81,6 +82,7 @@ const Navbar: React.FC = () => {
                 onMouseLeave={() => setOpenDropdown(null)}
               >
                 <button
+                  id="nav-tools-dropdown"
                   className={cn(
                     "px-1.5 xl:px-3 py-2 rounded-xl text-[10px] xl:text-[11px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-1.5 shrink-0",
                     isDropdownActive(toolItems)
@@ -105,6 +107,7 @@ const Navbar: React.FC = () => {
                         <NavLink
                           key={item.id}
                           to={item.path}
+                          id={`nav-${item.id}`}
                           className={({ isActive }) => cn(
                             "px-4 py-2 text-[11px] font-bold uppercase tracking-wider flex items-center gap-3 transition-colors",
                             isActive 

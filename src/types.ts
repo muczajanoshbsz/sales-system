@@ -6,6 +6,7 @@ export interface UserProfile {
   role: UserRole;
   displayName?: string;
   is_suspended?: boolean;
+  has_seen_onboarding?: boolean;
 }
 
 export interface Sale {

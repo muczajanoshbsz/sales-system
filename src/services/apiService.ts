@@ -261,6 +261,14 @@ export const apiService = {
     return await response.json();
   },
 
+  async completeOnboarding(): Promise<void> {
+    const response = await fetch(`${API_BASE}/users/onboarding-complete`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+  },
+
   // Admin Global Methods
   async getAdminUsers(): Promise<any[]> {
     const response = await fetch(`${API_BASE}/admin/users`, {

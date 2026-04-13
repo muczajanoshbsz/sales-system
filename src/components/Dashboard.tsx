@@ -294,7 +294,7 @@ const Dashboard: React.FC = () => {
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>;
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-700 pb-12">
+    <div id="dashboard-main" className="space-y-10 animate-in fade-in duration-700 pb-12">
       {/* Header & Quick Actions */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="flex-1">
