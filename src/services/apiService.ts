@@ -10,6 +10,18 @@ const getHeaders = () => {
   if (auth.currentUser) {
     headers['x-user-id'] = auth.currentUser.uid;
   }
+  
+  // Ghost Mode Headers
+  const ghostUserId = sessionStorage.getItem('ghost_user_id');
+  const ghostReadOnly = sessionStorage.getItem('ghost_mode_readonly');
+  
+  if (ghostUserId) {
+    headers['x-ghost-user-id'] = ghostUserId;
+    if (ghostReadOnly === 'true') {
+      headers['x-ghost-mode-readonly'] = 'true';
+    }
+  }
+  
   return headers;
 };
 

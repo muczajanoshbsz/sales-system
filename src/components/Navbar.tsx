@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 
 const Navbar: React.FC = () => {
-  const { profile, user } = useFirebase();
+  const { profile, user, ghostMode } = useFirebase();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -44,7 +44,10 @@ const Navbar: React.FC = () => {
   };
 
   return (
-    <nav className="bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 transition-colors duration-300">
+    <nav className={cn(
+      "bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 sticky z-40 transition-all duration-300",
+      ghostMode.isActive ? "top-12" : "top-0"
+    )}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">
           <div className="flex items-center gap-4 xl:gap-8 min-w-0 flex-1 mr-4">

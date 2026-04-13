@@ -11,6 +11,13 @@ interface FirebaseContextType {
   isAdmin: boolean;
   isSuspended: boolean;
   completeOnboarding: () => Promise<void>;
+  ghostMode: {
+    isActive: boolean;
+    targetUser: { uid: string; displayName?: string; email: string } | null;
+    readOnly: boolean;
+  };
+  enterGhostMode: (targetUser: { uid: string; displayName?: string; email: string }, readOnly?: boolean) => void;
+  exitGhostMode: () => void;
 }
 
 const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
@@ -20,6 +27,40 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSuspended, setIsSuspended] = useState(false);
+  const [ghostMode, setGhostMode] = useState<{
+    isActive: boolean;
+    targetUser: { uid: string; displayName?: string; email: string } | null;
+    readOnly: boolean;
+  }>({
+    isActive: !!sessionStorage.getItem('ghost_user_id'),
+    targetUser: sessionStorage.getItem('ghost_user_data') ? JSON.parse(sessionStorage.getItem('ghost_user_data')!) : null,
+    readOnly: sessionStorage.getItem('ghost_mode_readonly') === 'true',
+  });
+
+  const enterGhostMode = (targetUser: { uid: string; displayName?: string; email: string }, readOnly: boolean = true) => {
+    sessionStorage.setItem('ghost_user_id', targetUser.uid);
+    sessionStorage.setItem('ghost_user_data', JSON.stringify(targetUser));
+    sessionStorage.setItem('ghost_mode_readonly', String(readOnly));
+    setGhostMode({
+      isActive: true,
+      targetUser,
+      readOnly,
+    });
+    // Reload to apply headers across all components and reset state
+    window.location.reload();
+  };
+
+  const exitGhostMode = () => {
+    sessionStorage.removeItem('ghost_user_id');
+    sessionStorage.removeItem('ghost_user_data');
+    sessionStorage.removeItem('ghost_mode_readonly');
+    setGhostMode({
+      isActive: false,
+      targetUser: null,
+      readOnly: true,
+    });
+    window.location.reload();
+  };
 
   useEffect(() => {
     const handleSuspended = () => {
@@ -98,6 +139,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     isAdmin: profile?.role === 'admin',
     isSuspended,
     completeOnboarding,
+    ghostMode,
+    enterGhostMode,
+    exitGhostMode,
   };
 
   return <FirebaseContext.Provider value={value}>{children}</FirebaseContext.Provider>;

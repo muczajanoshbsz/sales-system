@@ -25,10 +25,12 @@ import {
   DollarSign,
   BarChart3,
   ExternalLink,
-  X
+  X,
+  Ghost
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Card, Button, Badge, LoadingSpinner } from './ui/Base';
+import { useFirebase } from './FirebaseProvider';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, formatCurrency } from '../lib/utils';
 import { ProductModel } from '../types';
@@ -49,6 +51,7 @@ const AdminPanel: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userInsights, setUserInsights] = useState<any>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const { enterGhostMode } = useFirebase();
 
   useEffect(() => {
     fetchData();
@@ -409,6 +412,18 @@ const AdminPanel: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => {
+                              if (confirm(`Biztosan be szeretnél lépni ${item.displayName || item.email} fiókjába Ghost módban?`)) {
+                                enterGhostMode({ uid: item.uid, displayName: item.displayName, email: item.email }, true);
+                              }
+                            }}
+                            title="Ghost Mode (Betekintés)"
+                          >
+                            <Ghost className="w-4 h-4 text-purple-500" />
+                          </Button>
                           <Button 
                             variant="ghost" 
                             size="sm" 

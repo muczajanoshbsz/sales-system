@@ -464,12 +464,19 @@ async function startServer() {
 
   await initDb();
 
-  const logActivity = async (userId: string, action: string, details: string) => {
+  const logActivity = async (userId: string, action: string, details: string, req?: express.Request) => {
+    let finalDetails = details;
+    const user = req ? (req as any).user : null;
+    
+    if (user && user.isGhostMode) {
+      finalDetails = `[GHOST MODE] Admin ${user.adminName} (${user.adminUid}) as User ${userId}: ${details}`;
+    }
+
     try {
       await runExec(pool, 'INSERT INTO audit_logs ("userId", action, details) VALUES (?, ?, ?)', [
         userId,
         action,
-        details,
+        finalDetails,
       ]);
     } catch (error) {
       console.error('Failed to log activity:', error);
@@ -478,6 +485,8 @@ async function startServer() {
 
   const getUserContext = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const userId = req.headers['x-user-id'] as string | undefined;
+    const ghostUserId = req.headers['x-ghost-user-id'] as string | undefined;
+    const ghostReadOnly = req.headers['x-ghost-mode-readonly'] === 'true';
 
     if (!userId) {
       (req as any).user = { role: 'guest' };
@@ -485,14 +494,45 @@ async function startServer() {
     }
 
     try {
-      const rows = await runQuery(pool, 'SELECT role, is_suspended FROM users WHERE uid = ?', [userId]);
+      const rows = await runQuery(pool, 'SELECT role, is_suspended, "displayName", email FROM users WHERE uid = ?', [userId]);
       if (rows.length > 0) {
         if (rows[0].is_suspended) {
           return res.status(403).json({ error: 'Account suspended' });
         }
-        (req as any).user = { uid: userId, role: rows[0].role };
         
-        // Update last_active asynchronously
+        const realUser = { uid: userId, role: rows[0].role, displayName: rows[0].displayName, email: rows[0].email };
+        (req as any).user = realUser;
+
+        // Ghost Mode Logic
+        if (ghostUserId && realUser.role === 'admin') {
+          const ghostRows = await runQuery(pool, 'SELECT role, "displayName", email FROM users WHERE uid = ?', [ghostUserId]);
+          if (ghostRows.length > 0) {
+            // Prevent admin impersonating another admin
+            if (ghostRows[0].role !== 'admin') {
+              (req as any).user = {
+                uid: ghostUserId,
+                role: ghostRows[0].role,
+                displayName: ghostRows[0].displayName,
+                email: ghostRows[0].email,
+                isGhostMode: true,
+                adminUid: userId,
+                adminName: realUser.displayName || realUser.email,
+                readOnly: ghostReadOnly
+              };
+
+              // Block write operations if read-only is active
+              if (ghostReadOnly && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
+                // Allow some specific non-modifying POSTs if any? No, usually POST is write.
+                // Exception: /users/sync is needed for login/sync
+                if (!req.path.includes('/users/sync')) {
+                  return res.status(403).json({ error: 'Ghost Mode is in Read-Only state' });
+                }
+              }
+            }
+          }
+        }
+        
+        // Update last_active asynchronously (only for real user)
         runExec(pool, 'UPDATE users SET last_active = NOW() WHERE uid = ?', [userId]).catch(err => console.error('Failed to update last_active:', err));
       } else {
         (req as any).user = { uid: userId, role: 'client' };
@@ -841,7 +881,7 @@ async function startServer() {
         ]
       );
 
-      await logActivity(userId, 'CREATE_SALE', `${sale.model} (${sale.quantity} db) - ${sale.platform}`);
+      await logActivity(userId, 'CREATE_SALE', `${sale.model} (${sale.quantity} db) - ${sale.platform}`, req);
       res.json({ id: rows[0].id, ...sale, userId });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -860,7 +900,7 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
-      await logActivity(sale.userId, 'DELETE_SALE', `${sale.model} - ${sale.platform}`);
+      await logActivity(sale.userId, 'DELETE_SALE', `${sale.model} - ${sale.platform}`, req);
       await runExec(pool, 'DELETE FROM sales WHERE id = ?', [req.params.id]);
       res.json({ success: true });
     } catch (error) {
@@ -904,7 +944,7 @@ async function startServer() {
         ]
       );
 
-      await logActivity(user.uid, 'UPDATE_SALE', `${sale.model} - ${sale.platform}`);
+      await logActivity(user.uid, 'UPDATE_SALE', `${sale.model} - ${sale.platform}`, req);
       res.json({ id: Number(req.params.id), ...sale });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -961,6 +1001,7 @@ async function startServer() {
         ]
       );
 
+      await logActivity(user.uid, 'UPDATE_STOCK', `${item.model} (${quantity})`, req);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -988,6 +1029,7 @@ async function startServer() {
         [item.model, item.condition, item.quantity, item.buy_price, item.lead_time || 7, userId]
       );
 
+      await logActivity(userId, 'CREATE_STOCK', `${item.model} (${item.quantity})`, req);
       res.json({ id: rows[0].id, ...item, userId });
     } catch (error: any) {
       if (error?.code === '23505') {
@@ -1009,6 +1051,7 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
+      await logActivity(item.userId, 'DELETE_STOCK', `${item.model}`, req);
       await runExec(pool, 'DELETE FROM stock WHERE id = ?', [req.params.id]);
       res.json({ success: true });
     } catch (error) {
@@ -1062,6 +1105,7 @@ async function startServer() {
         ]
       );
 
+      await logActivity(userId, 'CREATE_PENDING_SALE', `${sale.model} (${sale.quantity})`, req);
       res.json({ id: rows[0].id, ...sale, userId });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -1082,6 +1126,7 @@ async function startServer() {
 
       const { status } = req.body;
       await runExec(pool, 'UPDATE pending_sales SET status = ? WHERE id = ?', [status, req.params.id]);
+      await logActivity(user.uid, 'UPDATE_PENDING_STATUS', `${sale.model} -> ${status}`, req);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });

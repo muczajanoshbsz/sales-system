@@ -21,14 +21,31 @@ import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
 import { OnboardingTour } from './components/OnBoardingTour';
+import { GhostBar } from './components/GohstBar';
 import { logout } from './firebase';
+import { Ghost } from 'lucide-react';
 import { Button } from './components/ui/Base';
 import { Loader2, Lock } from 'lucide-react';
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
+import { cn } from './lib/utils';
 import React, { useEffect } from 'react';
 
 const AppContent: React.FC = () => {
-  const { user, profile, loading, isSuspended, completeOnboarding } = useFirebase();
+  const { user, profile, loading, isSuspended, completeOnboarding, ghostMode } = useFirebase();
+  const [showTeleport, setShowTeleport] = React.useState(false);
+
+  React.useEffect(() => {
+    if (ghostMode.isActive && !sessionStorage.getItem('ghost_teleported')) {
+      setShowTeleport(true);
+      sessionStorage.setItem('ghost_teleported', 'true');
+      const timer = setTimeout(() => setShowTeleport(false), 1500);
+      return () => clearTimeout(timer);
+    }
+    
+    if (!ghostMode.isActive) {
+      sessionStorage.removeItem('ghost_teleported');
+    }
+  }, [ghostMode.isActive]);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -123,8 +140,74 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Layout>
+    <div className={cn(
+      "min-h-screen transition-all duration-500",
+      ghostMode.isActive && "ring-4 ring-indigo-500/30 ring-inset pt-12"
+    )}>
       <AnimatePresence>
+        {showTeleport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[10001] bg-indigo-950 flex flex-col items-center justify-center overflow-hidden"
+          >
+            <motion.div
+              animate={{ 
+                scale: [1, 2, 1],
+                rotate: [0, 180, 360],
+                opacity: [0.1, 0.3, 0.1]
+              }}
+              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+              className="absolute w-[800px] h-[800px] bg-indigo-500/20 rounded-full blur-[120px]"
+            />
+            
+            <div className="relative flex flex-col items-center gap-8">
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", damping: 12 }}
+                className="w-24 h-24 bg-indigo-500/20 rounded-3xl border border-indigo-500/30 flex items-center justify-center backdrop-blur-xl"
+              >
+                <Ghost className="w-12 h-12 text-indigo-400 animate-pulse" />
+              </motion.div>
+              
+              <div className="flex flex-col items-center gap-2">
+                <motion.h2 
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-4xl font-black text-white tracking-tighter italic"
+                >
+                  TELEPORTÁLÁS...
+                </motion.h2>
+                <motion.p
+                  initial={{ y: 10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="text-indigo-400 font-bold uppercase tracking-[0.3em] text-xs"
+                >
+                  Szellem Mód Aktiválása
+                </motion.p>
+              </div>
+            </div>
+
+            {/* Scanning line effect */}
+            <motion.div 
+              animate={{ y: ['-100%', '200%'] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+              className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-400/50 to-transparent blur-sm"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <GhostBar />
+      <Layout>
+        {ghostMode.isActive && (
+          <div className="fixed inset-0 pointer-events-none z-[9999] bg-indigo-500/5 mix-blend-overlay" />
+        )}
+        <AnimatePresence>
         {profile && !profile.has_seen_onboarding && (
           <OnboardingTour 
             userName={profile.displayName || profile.email.split('@')[0]} 
@@ -147,6 +230,7 @@ const AppContent: React.FC = () => {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
+    </div>
   );
 };
 
