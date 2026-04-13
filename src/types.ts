@@ -5,6 +5,7 @@ export interface UserProfile {
   email: string;
   role: UserRole;
   displayName?: string;
+  is_suspended?: boolean;
 }
 
 export interface Sale {

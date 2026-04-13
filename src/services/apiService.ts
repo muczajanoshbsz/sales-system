@@ -23,6 +23,11 @@ const handleResponse = async (response: Response) => {
       // Fallback to status text
       errorMessage = response.statusText || errorMessage;
     }
+    
+    if (errorMessage === 'Account suspended') {
+      window.dispatchEvent(new CustomEvent('user-suspended'));
+    }
+    
     throw new Error(errorMessage);
   }
   return response;

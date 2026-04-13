@@ -20,11 +20,13 @@ import AuditLogs from './components/AuditLogs';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
-import { Loader2 } from 'lucide-react';
+import { logout } from './firebase';
+import { Button } from './components/ui/Base';
+import { Loader2, Lock } from 'lucide-react';
 import React, { useEffect } from 'react';
 
 const AppContent: React.FC = () => {
-  const { user, profile, loading } = useFirebase();
+  const { user, profile, loading, isSuspended } = useFirebase();
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
@@ -92,6 +94,24 @@ const AppContent: React.FC = () => {
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center gap-4 transition-colors duration-300">
         <Loader2 className="w-10 h-10 text-indigo-600 dark:text-indigo-400 animate-spin" />
         <p className="text-slate-500 dark:text-slate-400 font-medium animate-pulse">Rendszer betöltése...</p>
+      </div>
+    );
+  }
+
+  if (isSuspended) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 text-center">
+        <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mb-6">
+          <Lock className="w-10 h-10 text-red-600 dark:text-red-400" />
+        </div>
+        <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">Fiók felfüggesztve</h1>
+        <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+          Sajnáljuk, de a fiókodat adminisztrátori döntés alapján felfüggesztettük. 
+          Ha úgy gondolod, hogy ez hiba, vedd fel a kapcsolatot a rendszergazdával.
+        </p>
+        <Button onClick={() => logout()} variant="outline">
+          Kijelentkezés
+        </Button>
       </div>
     );
   }

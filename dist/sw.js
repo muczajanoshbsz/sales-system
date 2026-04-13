@@ -79,7 +79,7 @@ define(['./workbox-5a5d9309'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "index.html",
-    "revision": "0420b39dc6524900a755fab6b59bd600"
+    "revision": "5418573a0e37dcf0ee70231eadae05cd"
   }, {
     "url": "assets/workbox-window.prod.es5-BIl4cyR9.js",
     "revision": null
@@ -87,7 +87,7 @@ define(['./workbox-5a5d9309'], (function (workbox) { 'use strict';
     "url": "assets/index-DJUmNyEl.css",
     "revision": null
   }, {
-    "url": "assets/index-C3OfgWJn.js",
+    "url": "assets/index-BddUiYWL.js",
     "revision": null
   }, {
     "url": "icon.svg",

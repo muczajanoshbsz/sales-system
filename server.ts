@@ -558,6 +558,10 @@ async function startServer() {
 
       const existing = await runQuery(pool, 'SELECT * FROM users WHERE uid = ?', [uid]);
 
+      if (existing.length > 0 && existing[0].is_suspended) {
+        return res.status(403).json({ error: 'Account suspended' });
+      }
+
       if (existing.length === 0) {
         const countRows = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM users');
         const role = Number(countRows[0].count) === 0 || email === 'csmucza@gmail.com' ? 'admin' : 'client';
@@ -616,14 +620,15 @@ async function startServer() {
         }
       }
 
-      const finalUser = await runQuery(pool, 'SELECT uid, email, role, "displayName" FROM users WHERE uid = ?', [uid]);
+      const finalUser = await runQuery(pool, 'SELECT uid, email, role, "displayName", is_suspended FROM users WHERE uid = ?', [uid]);
       if (finalUser.length > 0) {
         const user = finalUser[0];
         res.json({
           uid: user.uid,
           email: user.email,
           role: user.role,
-          displayName: user.displayName || user.displayname || null
+          displayName: user.displayName || user.displayname || null,
+          is_suspended: user.is_suspended
         });
       } else {
         res.status(404).json({ error: 'User not found after sync' });
