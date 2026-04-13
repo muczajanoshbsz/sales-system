@@ -11,11 +11,13 @@ import {
   ShoppingBag, TrendingUp, DollarSign, AlertTriangle, BarChart3, 
   LineChart as LineChartIcon, Sparkles, Clock, CheckCircle2, 
   ArrowUpRight, ArrowDownRight, Activity, Package, Users, 
-  ChevronRight, Plus
+  ChevronRight, Plus, RefreshCcw
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { apiService } from '../services/apiService';
+import { getProfitPrediction } from '../services/geminiService';
 import { useFirebase } from './FirebaseProvider';
+import { SEASONAL_ADJUSTMENTS } from '../constants';
 import { subDays, format, startOfMonth, addMonths, isAfter, parseISO, isSameMonth, subMonths } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from './ui/Base';
@@ -29,7 +31,99 @@ const Dashboard: React.FC = () => {
   const [stock, setStock] = useState<StockItem[]>([]);
   const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
   const [loading, setLoading] = useState(true);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [profitPrediction, setProfitPrediction] = useState<any>(null);
+  const [predictionSource, setPredictionSource] = useState<'ai' | 'stat' | null>(null);
   const [viewMode, setViewMode] = useState<'personal' | 'global'>('personal');
+
+  const getFallbackPrediction = (salesData: Sale[]) => {
+    const monthlyProfit = salesData.reduce((acc: Record<string, number>, sale) => {
+      const month = sale.date.substring(0, 7);
+      acc[month] = (acc[month] || 0) + sale.profit;
+      return acc;
+    }, {});
+
+    const months = Object.keys(monthlyProfit).sort();
+    if (months.length === 0) return null;
+
+    // Weighted average of last 3 months
+    const last3Months = months.slice(-3);
+    let totalWeight = 0;
+    let weightedProfit = 0;
+    last3Months.forEach((m, i) => {
+      const weight = i + 1;
+      weightedProfit += monthlyProfit[m] * weight;
+      totalWeight += weight;
+    });
+    const baseProfit = weightedProfit / totalWeight;
+
+    const predictions = [];
+    const now = new Date();
+    for (let i = 1; i <= 3; i++) {
+      const futureDate = addMonths(now, i);
+      const monthNum = futureDate.getMonth() + 1;
+      const seasonalFactor = SEASONAL_ADJUSTMENTS[monthNum] || 1;
+      
+      const predicted = Math.round(baseProfit * seasonalFactor);
+      predictions.push({
+        date: format(futureDate, 'yyyy-MM'),
+        predicted_profit: predicted,
+        confidence_upper: Math.round(predicted * 1.15),
+        confidence_lower: Math.round(predicted * 0.85)
+      });
+    }
+
+    return {
+      predictions,
+      insights: [
+        "A jóslat statisztikai adatok és szezonalitási szorzók alapján készült.",
+        "Az AI elemzés jelenleg nem elérhető vagy frissítésre vár."
+      ]
+    };
+  };
+
+  const fetchPrediction = async (salesData: Sale[], force = false) => {
+    const CACHE_KEY = `profit_prediction_${viewMode}`;
+    const cached = localStorage.getItem(CACHE_KEY);
+    const now = Date.now();
+    const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
+
+    if (!force && cached) {
+      try {
+        const { timestamp, salesCount, data, source } = JSON.parse(cached);
+        const timeDiff = now - timestamp;
+        const salesDiff = Math.abs(salesData.length - salesCount);
+
+        if (timeDiff < FORTY_EIGHT_HOURS && salesDiff < 5) {
+          setProfitPrediction(data);
+          setPredictionSource(source || 'ai');
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to parse cached prediction');
+      }
+    }
+
+    setAiLoading(true);
+    try {
+      const aiData = await getProfitPrediction(salesData);
+      setProfitPrediction(aiData);
+      setPredictionSource('ai');
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        timestamp: now,
+        salesCount: salesData.length,
+        data: aiData,
+        source: 'ai'
+      }));
+    } catch (error) {
+      console.error('AI prediction failed, using fallback:', error);
+      const fallback = getFallbackPrediction(salesData);
+      setProfitPrediction(fallback);
+      setPredictionSource('stat');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -60,6 +154,11 @@ const Dashboard: React.FC = () => {
         setSales(salesData);
         setStock(stockData);
         setPendingSales(pendingData);
+
+        // Fetch AI prediction with caching logic
+        if (salesData.length > 0) {
+          fetchPrediction(salesData);
+        }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
@@ -437,6 +536,94 @@ const Dashboard: React.FC = () => {
                 <span className="text-sm font-bold text-slate-900 dark:text-white">{item.value} eladás</span>
               </div>
             ))}
+          </div>
+        </Card>
+
+        {/* Profit Prediction - 12 cols */}
+        <Card className="p-6 lg:col-span-12 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden relative">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Profit Előrejelzés</h3>
+                <div className={cn(
+                  "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                  predictionSource === 'ai' 
+                    ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                )}>
+                  {predictionSource === 'ai' ? <Sparkles className="w-3 h-3" /> : <Activity className="w-3 h-3" />}
+                  {predictionSource === 'ai' ? 'AI Becslés' : 'Statisztikai Modell'}
+                </div>
+              </div>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Következő 3 hónap várható nyeresége</p>
+            </div>
+            <div className="flex items-center gap-3">
+              {aiLoading && (
+                <div className="flex items-center gap-2 text-xs text-slate-400 animate-pulse">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"></div>
+                  Elemzés...
+                </div>
+              )}
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => fetchPrediction(sales, true)}
+                disabled={aiLoading}
+                className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+              >
+                <RefreshCcw className={cn("w-3 h-3 mr-1.5", aiLoading && "animate-spin")} />
+                Frissítés
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 h-[300px] -ml-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={profitPrediction?.predictions || []}>
+                  <defs>
+                    <linearGradient id="colorPred" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+                  <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v/1000}k`} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'var(--tw-color-slate-900)', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', color: 'white' }}
+                    formatter={(value: number) => [formatCurrency(value), 'Várható Profit']}
+                  />
+                  <Area type="monotone" dataKey="confidence_upper" stroke="none" fill="#8b5cf6" fillOpacity={0.05} />
+                  <Area type="monotone" dataKey="confidence_lower" stroke="none" fill="#8b5cf6" fillOpacity={0.05} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="predicted_profit" 
+                    stroke="#8b5cf6" 
+                    strokeWidth={3} 
+                    strokeDasharray="5 5"
+                    dot={{ r: 4, fill: '#8b5cf6', strokeWidth: 2, stroke: '#fff' }} 
+                    activeDot={{ r: 6 }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="space-y-4">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">AI Megállapítások</h4>
+              <div className="space-y-3">
+                {profitPrediction?.insights?.map((insight: string, idx: number) => (
+                  <div key={idx} className="flex gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">{insight}</p>
+                  </div>
+                ))}
+                {!profitPrediction && !aiLoading && (
+                  <div className="py-8 text-center text-slate-400 text-xs italic">
+                    Nincs elég adat az előrejelzéshez.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </Card>
 

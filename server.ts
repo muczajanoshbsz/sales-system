@@ -1585,6 +1585,51 @@ async function startServer() {
     }
   });
 
+  apiRouter.post('/ai/profit-prediction', async (req, res) => {
+    try {
+      const apiKey = requireEnv('GEMINI_API_KEY');
+      const { sales } = req.body;
+
+      const result = await callGeminiJSON<{
+        predictions: {
+          date: string;
+          predicted_profit: number;
+          confidence_upper: number;
+          confidence_lower: number;
+        }[];
+        insights: string[];
+      }>(
+        apiKey,
+        jsonBlockPrompt(
+          'Predict the profit for the next 3 months in Hungarian based on historical sales data.',
+          {
+            sales: (sales || []).map((s: any) => ({
+              date: s.date,
+              profit: s.profit,
+            })),
+            currentDate: new Date().toISOString().split('T')[0],
+          },
+          `{
+  "predictions": [
+    {
+      "date": "YYYY-MM",
+      "predicted_profit": 0,
+      "confidence_upper": 0,
+      "confidence_lower": 0
+    }
+  ],
+  "insights": ["..."]
+}`
+        )
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error('AI profit prediction error:', error);
+      res.status(500).json({ error: 'AI profit prediction failed' });
+    }
+  });
+
   apiRouter.post('/ai/chat', async (req, res) => {
     try {
       const apiKey = requireEnv('GEMINI_API_KEY');
