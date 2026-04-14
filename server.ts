@@ -566,6 +566,25 @@ async function startServer() {
     next();
   };
 
+  // Secret trigger for automated backups (for external cron services)
+  app.get('/api/system/trigger-auto-backup', async (req, res) => {
+    const { token } = req.query;
+    const secretToken = process.env.BACKUP_CRON_TOKEN || 'AirPods_Secure_2024_Xyz';
+
+    if (token !== secretToken) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      console.log('External Cron Trigger: Creating daily backup...');
+      await createBackup('auto');
+      res.json({ success: true });
+    } catch (error) {
+      console.error('External Cron Trigger failed:', error);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   const apiRouter = express.Router();
   apiRouter.use(getUserContext);
 

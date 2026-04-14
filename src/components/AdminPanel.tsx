@@ -63,6 +63,8 @@ const AdminPanel: React.FC = () => {
   const [backups, setBackups] = useState<any[]>([]);
   const [newModelName, setNewModelName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showBackupAlert, setShowBackupAlert] = useState(false);
+  const [isCreatingAutoBackup, setIsCreatingAutoBackup] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userInsights, setUserInsights] = useState<any>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -72,7 +74,40 @@ const AdminPanel: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+    if (activeTab === 'backups' || activeTab === 'stats') {
+      checkDailyBackup();
+    }
   }, [activeTab]);
+
+  const checkDailyBackup = async () => {
+    try {
+      const allBackups = await apiService.getBackups();
+      const today = new Date().toISOString().split('T')[0];
+      const hasTodayAuto = allBackups.some(b => 
+        b.type === 'auto' && b.created_at.startsWith(today)
+      );
+
+      if (!hasTodayAuto) {
+        setShowBackupAlert(true);
+      }
+    } catch (error) {
+      console.error('Error checking daily backup:', error);
+    }
+  };
+
+  const handleCreateAutoBackup = async () => {
+    setIsCreatingAutoBackup(true);
+    try {
+      await apiService.createBackup();
+      setShowBackupAlert(false);
+      fetchData();
+    } catch (error) {
+      console.error('Error creating auto backup:', error);
+      alert('Hiba a mentés során');
+    } finally {
+      setIsCreatingAutoBackup(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -1020,6 +1055,58 @@ const AdminPanel: React.FC = () => {
         }}
         targetUser={ghostTarget || { email: '' }}
       />
+
+      {/* Missing Backup Alert Modal */}
+      <AnimatePresence>
+        {showBackupAlert && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden"
+            >
+              <div className="p-8 text-center">
+                <div className="w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <AlertTriangle className="w-10 h-10 text-amber-600 dark:text-amber-400" />
+                </div>
+                <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4 uppercase tracking-tight">
+                  Hiányzó Napi Mentés!
+                </h2>
+                <p className="text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">
+                  A rendszer nem talált automatikus biztonsági mentést a mai napra. 
+                  A biztonságos üzemeltetés érdekében javasolt a mentés pótlása.
+                </p>
+                <div className="flex flex-col gap-3">
+                  <Button 
+                    variant="primary" 
+                    className="w-full py-4 text-sm font-black uppercase tracking-widest shadow-lg shadow-indigo-200 dark:shadow-none"
+                    onClick={handleCreateAutoBackup}
+                    disabled={isCreatingAutoBackup}
+                  >
+                    {isCreatingAutoBackup ? (
+                      <div className="flex items-center gap-2">
+                        <LoadingSpinner size="sm" />
+                        Mentés folyamatban...
+                      </div>
+                    ) : (
+                      'Mentés pótlása most'
+                    )}
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    className="w-full py-3 text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest"
+                    onClick={() => setShowBackupAlert(false)}
+                    disabled={isCreatingAutoBackup}
+                  >
+                    Később emlékeztess
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
