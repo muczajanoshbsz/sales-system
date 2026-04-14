@@ -412,8 +412,12 @@ async function startServer() {
           format VARCHAR(50) NOT NULL, -- 'sql' or 'json'
           created_by VARCHAR(100),
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          metadata JSONB
+          metadata JSONB,
+          data TEXT -- Store encrypted backup data in DB for persistence on ephemeral storage
         );
+
+        -- Ensure data column exists if table was already created
+        ALTER TABLE backups ADD COLUMN IF NOT EXISTS data TEXT;
       `);
 
       await pool.query(`
@@ -1269,14 +1273,27 @@ async function startServer() {
     }
 
     const encryptedData = encrypt(JSON.stringify(snapshot));
-    fs.writeFileSync(filePath, encryptedData);
-    const stats = fs.statSync(filePath);
+    
+    // Still write to file as a temporary cache, but primary storage is now DB
+    try {
+      fs.writeFileSync(filePath, encryptedData);
+    } catch (e) {
+      console.warn('Could not write backup file to disk, continuing with DB storage only');
+    }
 
     const result = await runQuery(pool, `
-      INSERT INTO backups (filename, size, type, format, created_by, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO backups (filename, size, type, format, created_by, metadata, data)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       RETURNING *
-    `, [filename, stats.size, type, 'enc', createdBy || 'system', JSON.stringify({ tables: tables })]);
+    `, [
+      filename, 
+      Buffer.byteLength(encryptedData), 
+      type, 
+      'enc', 
+      createdBy || 'system', 
+      JSON.stringify({ tables: tables }),
+      encryptedData
+    ]);
 
     return result[0];
   }
@@ -1413,15 +1430,21 @@ async function startServer() {
       const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
       if (!backup.length) return res.status(404).json({ error: 'Backup not found' });
 
-      const filePath = path.join(BACKUP_DIR, backup[0].filename);
-      if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Backup file missing' });
+      let finalContent = backup[0].data;
+      if (!finalContent) {
+        // Fallback to disk if DB data is missing (for older backups)
+        const filePath = path.join(BACKUP_DIR, backup[0].filename);
+        if (fs.existsSync(filePath)) {
+          finalContent = fs.readFileSync(filePath, 'utf8');
+        } else {
+          return res.status(404).json({ error: 'Backup data missing' });
+        }
+      }
 
-      const fileContent = fs.readFileSync(filePath, 'utf8');
-      let finalContent = fileContent;
       let finalFilename = backup[0].filename;
 
       if (backup[0].format === 'enc') {
-        finalContent = decrypt(fileContent);
+        finalContent = decrypt(finalContent);
         finalFilename = backup[0].filename.replace('.enc', '.json');
       }
 
@@ -1437,17 +1460,25 @@ async function startServer() {
   adminRouter.post('/backups/restore/:id', async (req, res) => {
     const client = await pool.connect();
     try {
-      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [req.params.id]);
+      const { id } = req.params;
+      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
       if (!backup.length) return res.status(404).json({ error: 'Backup not found' });
 
-      const filePath = path.join(BACKUP_DIR, backup[0].filename);
+      let rawData = backup[0].data;
+      if (!rawData) {
+        const filePath = path.join(BACKUP_DIR, backup[0].filename);
+        if (fs.existsSync(filePath)) {
+          rawData = fs.readFileSync(filePath, 'utf8');
+        } else {
+          return res.status(404).json({ error: 'Backup data missing' });
+        }
+      }
       
       let snapshot;
-      const fileContent = fs.readFileSync(filePath, 'utf8');
       if (backup[0].format === 'enc') {
-        snapshot = JSON.parse(decrypt(fileContent));
+        snapshot = JSON.parse(decrypt(rawData));
       } else {
-        snapshot = JSON.parse(fileContent);
+        snapshot = JSON.parse(rawData);
       }
 
       await client.query('BEGIN');
@@ -1523,15 +1554,21 @@ async function startServer() {
       const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [backupId]);
       if (!backup.length) return next();
 
-      const filePath = path.join(BACKUP_DIR, backup[0].filename);
-      if (!fs.existsSync(filePath)) return next();
+      let rawData = backup[0].data;
+      if (!rawData) {
+        const filePath = path.join(BACKUP_DIR, backup[0].filename);
+        if (fs.existsSync(filePath)) {
+          rawData = fs.readFileSync(filePath, 'utf8');
+        } else {
+          return next();
+        }
+      }
       
       let snapshot;
-      const fileContent = fs.readFileSync(filePath, 'utf8');
       if (backup[0].format === 'enc') {
-        snapshot = JSON.parse(decrypt(fileContent));
+        snapshot = JSON.parse(decrypt(rawData));
       } else {
-        snapshot = JSON.parse(fileContent);
+        snapshot = JSON.parse(rawData);
       }
 
       const pathName = req.path;
