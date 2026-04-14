@@ -131,6 +131,7 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'stock') return stock.filter(s => s.model.toLowerCase().includes(term) || s.userEmail?.toLowerCase().includes(term));
     if (activeTab === 'logs') return logs.filter(l => l.action.toLowerCase().includes(term) || l.userEmail?.toLowerCase().includes(term));
     if (activeTab === 'catalog') return catalogModels.filter(m => m.name.toLowerCase().includes(term));
+    if (activeTab === 'backups') return backups.filter(b => b.filename.toLowerCase().includes(term) || b.created_by?.toLowerCase().includes(term));
     return [];
   };
 
@@ -684,7 +685,13 @@ const AdminPanel: React.FC = () => {
                         variant="ghost" 
                         size="sm" 
                         className="text-emerald-600 hover:bg-emerald-50"
-                        onClick={() => apiService.downloadBackup(backup.id)}
+                        onClick={async () => {
+                          try {
+                            await apiService.downloadBackup(backup.id);
+                          } catch (error) {
+                            alert('Letöltés sikertelen: ' + (error as Error).message);
+                          }
+                        }}
                         title="Letöltés"
                       >
                         <Download className="w-4 h-4" />

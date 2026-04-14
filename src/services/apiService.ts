@@ -424,18 +424,34 @@ export const apiService = {
   },
 
   async downloadBackup(id: number): Promise<void> {
-    const response = await fetch(`${API_BASE}/admin/backups/download/${id}`, {
-      headers: getHeaders(),
-    });
-    await handleResponse(response);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backup-${id}.json`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
+    try {
+      const response = await fetch(`${API_BASE}/admin/backups/download/${id}`, {
+        headers: getHeaders(),
+      });
+      await handleResponse(response);
+      
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `backup-${id}.json`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download failed:', error);
+      throw error;
+    }
   },
 
   async exportData(format: 'json' | 'xlsx'): Promise<void> {

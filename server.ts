@@ -1390,24 +1390,27 @@ async function startServer() {
 
   adminRouter.get('/backups/download/:id', async (req, res) => {
     try {
-      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [req.params.id]);
+      const { id } = req.params;
+      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
       if (!backup.length) return res.status(404).json({ error: 'Backup not found' });
 
       const filePath = path.join(BACKUP_DIR, backup[0].filename);
       if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Backup file missing' });
 
-      let content = fs.readFileSync(filePath, 'utf8');
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      let finalContent = fileContent;
+      let finalFilename = backup[0].filename;
+
       if (backup[0].format === 'enc') {
-        content = decrypt(content);
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Content-Disposition', `attachment; filename=decrypted-${backup[0].filename.replace('.enc', '.json')}`);
-      } else {
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Content-Disposition', `attachment; filename=${backup[0].filename}`);
+        finalContent = decrypt(fileContent);
+        finalFilename = backup[0].filename.replace('.enc', '.json');
       }
-      
-      res.send(content);
+
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${finalFilename}"`);
+      res.send(finalContent);
     } catch (error) {
+      console.error('Download error:', error);
       res.status(500).json({ error: (error as Error).message });
     }
   });
@@ -1660,6 +1663,33 @@ async function startServer() {
     } finally {
       client.release();
     }
+  });
+
+  // Lazy Cron: Check for daily backup on every request
+  let lastAutoBackupCheck = 0;
+  apiRouter.use(async (req, res, next) => {
+    const now = Date.now();
+    // Check every 15 minutes
+    if (now - lastAutoBackupCheck > 15 * 60 * 1000) {
+      lastAutoBackupCheck = now;
+      const today = new Date();
+      if (today.getHours() >= 3) {
+        const dateStr = today.toISOString().split('T')[0];
+        try {
+          const existing = await runQuery(pool, 
+            "SELECT id FROM backups WHERE type = 'auto' AND created_at::date = ?", 
+            [dateStr]
+          );
+          if (existing.length === 0) {
+            console.log('Lazy Cron: Creating daily backup...');
+            await createBackup('auto');
+          }
+        } catch (error) {
+          console.error('Lazy Cron failed:', error);
+        }
+      }
+    }
+    next();
   });
 
   // AI endpoints
