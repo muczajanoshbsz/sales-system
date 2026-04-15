@@ -22,6 +22,7 @@ const SalesManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
+  const [editingPendingSale, setEditingPendingSale] = useState<PendingSale | null>(null);
   const [selectedSales, setSelectedSales] = useState<string[]>([]);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -110,6 +111,21 @@ const SalesManager: React.FC = () => {
           showToast(translateError(err), 'error');
           return; // Don't reset form if it failed
         }
+      } else if (editingPendingSale) {
+        const updatedPending: Partial<PendingSale> = {
+          ...formData as PendingSale,
+          profit,
+          userId: editingPendingSale.userId
+        };
+        try {
+          await apiService.updatePendingSale(editingPendingSale.id!, updatedPending);
+          setIsModalOpen(false);
+          setEditingPendingSale(null);
+          showToast('Függő eladás sikeresen módosítva', 'success');
+        } catch (err) {
+          showToast(translateError(err), 'error');
+          return;
+        }
       } else {
         const pendingData: Omit<PendingSale, 'id'> = {
           ...formData as Sale,
@@ -145,6 +161,26 @@ const SalesManager: React.FC = () => {
       tracking_number: sale.tracking_number || '',
       notes: sale.notes || '',
     });
+    setIsModalOpen(true);
+  };
+
+  const handleEditPending = (pending: PendingSale) => {
+    setEditingPendingSale(pending);
+    setFormData({
+      date: pending.date.split('T')[0],
+      model: pending.model,
+      condition: pending.condition,
+      platform: pending.platform,
+      quantity: pending.quantity,
+      buy_price: pending.buy_price,
+      sell_price: pending.sell_price,
+      fees: pending.fees,
+      buyer: pending.buyer || '',
+      city: pending.city || '',
+      tracking_number: pending.tracking_number || '',
+      notes: pending.notes || '',
+    });
+    setIsPendingModalOpen(false);
     setIsModalOpen(true);
   };
 
@@ -417,9 +453,10 @@ const SalesManager: React.FC = () => {
         onClose={() => {
           setIsModalOpen(false);
           setEditingSale(null);
+          setEditingPendingSale(null);
           resetForm();
         }} 
-        title={editingSale ? "Eladás Módosítása" : "Új Eladás Rögzítése"}
+        title={editingSale ? "Eladás Módosítása" : editingPendingSale ? "Függő Eladás Módosítása" : "Új Eladás Rögzítése"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -503,9 +540,10 @@ const SalesManager: React.FC = () => {
             <Button variant="ghost" type="button" onClick={() => {
               setIsModalOpen(false);
               setEditingSale(null);
+              setEditingPendingSale(null);
               resetForm();
             }}>Mégse</Button>
-            <Button type="submit">{editingSale ? "Módosítás Mentése" : "Mentés Függőként"}</Button>
+            <Button type="submit">{editingSale || editingPendingSale ? "Módosítás Mentése" : "Mentés Függőként"}</Button>
           </div>
         </form>
       </Modal>
@@ -521,6 +559,9 @@ const SalesManager: React.FC = () => {
                 <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1">Várható profit: {formatCurrency(pending.profit)}</p>
               </div>
               <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => handleEditPending(pending)} className="text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                  <Edit2 className="w-4 h-4" />
+                </Button>
                 <Button variant="ghost" size="sm" onClick={() => cancelSale(pending.id!)} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
                   <X className="w-4 h-4" />
                 </Button>

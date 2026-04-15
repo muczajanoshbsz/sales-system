@@ -212,6 +212,24 @@ export const apiService = {
     await handleResponse(response);
   },
 
+  async updatePendingSale(id: string, sale: Partial<PendingSale>): Promise<PendingSale> {
+    const response = await fetch(`${API_BASE}/pending_sales/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(sale),
+    });
+    await handleResponse(response);
+    const s = await response.json();
+    return {
+      ...s,
+      quantity: Number(s.quantity),
+      buy_price: Number(s.buy_price),
+      sell_price: Number(s.sell_price),
+      fees: Number(s.fees),
+      profit: Number(s.profit),
+    };
+  },
+
   // Market Prices
   async getMarketPrices(): Promise<MarketPrice[]> {
     const response = await fetch(`${API_BASE}/market_prices`, {

@@ -1161,10 +1161,28 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
-      const { status } = req.body;
-      await runExec(pool, 'UPDATE pending_sales SET status = ? WHERE id = ?', [status, req.params.id]);
-      await logActivity(user.uid, 'UPDATE_PENDING_STATUS', `${sale.model} -> ${status}`, req);
-      res.json({ success: true });
+      const updates = req.body;
+      const allowedFields = ['status', 'date', 'model', 'condition', 'platform', 'quantity', 'buy_price', 'sell_price', 'fees', 'profit', 'buyer', 'city', 'tracking_number', 'notes'];
+      
+      const setClauses = [];
+      const values = [];
+      
+      for (const field of allowedFields) {
+        if (updates[field] !== undefined) {
+          setClauses.push(`"${field}" = ?`);
+          values.push(updates[field]);
+        }
+      }
+      
+      if (setClauses.length === 0) return res.json({ success: true });
+      
+      values.push(req.params.id);
+      await runExec(pool, `UPDATE pending_sales SET ${setClauses.join(', ')} WHERE id = ?`, values);
+      
+      const updatedRows = await runQuery(pool, 'SELECT * FROM pending_sales WHERE id = ?', [req.params.id]);
+      
+      await logActivity(user.uid, 'UPDATE_PENDING', `${sale.model} updated`, req);
+      res.json(updatedRows[0]);
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
