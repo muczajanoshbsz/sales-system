@@ -1431,6 +1431,62 @@ async function startServer() {
     }
   });
 
+  adminRouter.post('/ai-diagnostics', async (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'Gemini API key not configured' });
+
+    try {
+      const { message, history = [] } = req.body;
+
+      // Gather system state
+      const [logs, stock, backups, stats] = await Promise.all([
+        runQuery(pool, 'SELECT a.*, u.email AS "userEmail" FROM audit_logs a LEFT JOIN users u ON a."userId" = u.uid ORDER BY a."timestamp" DESC LIMIT 50'),
+        runQuery(pool, 'SELECT * FROM stock'),
+        runQuery(pool, 'SELECT id, filename, type, created_at FROM backups ORDER BY created_at DESC LIMIT 5'),
+        runQuery(pool, 'SELECT COUNT(*) as sales_count, SUM(profit) as total_profit FROM sales')
+      ]);
+
+      const systemContext = {
+        timestamp: new Date().toISOString(),
+        auditLogs: logs,
+        stockLevels: stock,
+        recentBackups: backups,
+        basicStats: stats[0]
+      };
+
+      const systemInstruction = `You are the "AI System Doctor" for an AirPods Inventory & Sales Management application. 
+      Your goal is to analyze the system state, identify potential issues (security, data integrity, business logic, technical failures), and provide clear, human-friendly advice to the administrator.
+      
+      Current System Context: ${JSON.stringify(systemContext)}
+      
+      Guidelines:
+      1. Be professional yet friendly.
+      2. If you see failed operations in logs, explain why they might have happened.
+      3. If stock is low or profit is negative, point it out.
+      4. If backups are missing or old, warn the user.
+      5. Translate technical errors into Hungarian (as the user is Hungarian).
+      6. Provide actionable steps for any issues found.
+      7. Keep responses concise but thorough.`;
+
+      const geminiHistory = history.map((h: any) => ({
+        role: h.role === 'user' ? 'user' : 'model',
+        parts: [{ text: h.content }]
+      }));
+
+      const analysis = await callGeminiChat(
+        apiKey,
+        systemInstruction,
+        geminiHistory,
+        message || "Kérlek, végezz egy teljes rendszerellenőrzést és írj egy rövid jelentést!"
+      );
+
+      res.json({ analysis });
+    } catch (error) {
+      console.error('AI Diagnostics failed:', error);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   adminRouter.post('/backups/create', async (req, res) => {
     try {
       const user = (req as any).user;

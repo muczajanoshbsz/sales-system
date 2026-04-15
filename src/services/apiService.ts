@@ -486,4 +486,15 @@ export const apiService = {
     a.click();
     window.URL.revokeObjectURL(url);
   },
+
+  async getAIDiagnostics(message?: string, history?: any[]): Promise<string> {
+    const response = await fetch(`${API_BASE}/admin/ai-diagnostics`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ message, history }),
+    });
+    await handleResponse(response);
+    const data = await response.json();
+    return data.analysis;
+  },
 };

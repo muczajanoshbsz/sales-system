@@ -35,7 +35,12 @@ import {
   FileJson,
   FileSpreadsheet,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Stethoscope,
+  Send,
+  Bot,
+  Sparkles,
+  MessageSquare
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Card, Button, Badge, LoadingSpinner } from './ui/Base';
@@ -46,7 +51,7 @@ import { ProductModel } from '../types';
 
 import { GhostModeModal } from './GhostModeModal';
 
-type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups';
+type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups' | 'diagnostics';
 
 const AdminPanel: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -61,6 +66,10 @@ const AdminPanel: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [catalogModels, setCatalogModels] = useState<ProductModel[]>([]);
   const [backups, setBackups] = useState<any[]>([]);
+  const [diagnostics, setDiagnostics] = useState<{ report: string; timestamp: string } | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagHistory, setDiagHistory] = useState<{ role: 'user' | 'model'; content: string }[]>([]);
+  const [diagInput, setDiagInput] = useState('');
   const [newModelName, setNewModelName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showBackupAlert, setShowBackupAlert] = useState(false);
@@ -594,6 +603,179 @@ const AdminPanel: React.FC = () => {
     );
   };
 
+  const handleRunDiagnostics = async (message?: string) => {
+    setDiagLoading(true);
+    try {
+      const userMessage = message || diagInput;
+      if (message || diagInput) {
+        setDiagHistory(prev => [...prev, { role: 'user', content: userMessage }]);
+      }
+      
+      const analysis = await apiService.getAIDiagnostics(userMessage, diagHistory);
+      
+      setDiagnostics({
+        report: analysis,
+        timestamp: new Date().toISOString()
+      });
+      setDiagHistory(prev => [...prev, { role: 'model', content: analysis }]);
+      setDiagInput('');
+    } catch (error) {
+      console.error('Diagnostics failed:', error);
+    } finally {
+      setDiagLoading(false);
+    }
+  };
+
+  const renderDiagnostics = () => (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column: Info & Actions */}
+        <div className="lg:col-span-1 space-y-6">
+          <Card className="p-6 bg-gradient-to-br from-indigo-600 to-violet-700 border-none text-white overflow-hidden relative">
+            <div className="relative z-10">
+              <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mb-4">
+                <Stethoscope className="w-6 h-6 text-white" />
+              </div>
+              <h3 className="text-xl font-black tracking-tight mb-2">AI Rendszer-Doktor</h3>
+              <p className="text-indigo-100 text-sm leading-relaxed mb-6">
+                A Gemini AI átvizsgálja a rendszeredet, elemzi a hibanaplókat, a készletet és a mentéseket, hogy segítsen a hibaelhárításban.
+              </p>
+              <Button 
+                onClick={() => handleRunDiagnostics()} 
+                disabled={diagLoading}
+                className="w-full bg-white text-indigo-600 hover:bg-indigo-50 font-bold uppercase tracking-widest text-[10px] py-4 rounded-xl shadow-xl shadow-indigo-900/20"
+              >
+                {diagLoading ? <LoadingSpinner size="sm" /> : (
+                  <>
+                    <Activity className="w-4 h-4 mr-2" />
+                    Teljes Ellenőrzés
+                  </>
+                )}
+              </Button>
+            </div>
+            {/* Decorative circles */}
+            <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+            <div className="absolute -left-10 -top-10 w-32 h-32 bg-indigo-400/20 rounded-full blur-2xl"></div>
+          </Card>
+
+          <Card className="p-6 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5" />
+              Mire képes a Doktor?
+            </h4>
+            <ul className="space-y-3">
+              {[
+                'Hibanaplók elemzése',
+                'Készlethiány előrejelzés',
+                'Mentési integritás ellenőrzése',
+                'Üzleti anomáliák kiszűrése',
+                'Technikai segítségnyújtás'
+              ].map((item, i) => (
+                <li key={i} className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400 font-medium">
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+
+        {/* Right Column: Chat/Report Area */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="flex flex-col h-[600px] border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Bot className="w-5 h-5 text-indigo-600" />
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></div>
+                </div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Diagnosztikai Konzultáció</h3>
+              </div>
+              {diagnostics && (
+                <span className="text-[10px] text-slate-400 font-medium">
+                  Utolsó jelentés: {new Date(diagnostics.timestamp).toLocaleTimeString('hu-HU')}
+                </span>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
+              {diagHistory.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
+                  <MessageSquare className="w-12 h-12 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-400 max-w-xs">
+                    Indíts egy teljes ellenőrzést, vagy kérdezz valamit a rendszerről!
+                  </p>
+                </div>
+              ) : (
+                diagHistory.map((chat, idx) => (
+                  <div key={idx} className={cn(
+                    "flex gap-4 max-w-[85%]",
+                    chat.role === 'user' ? "ml-auto flex-row-reverse" : "mr-auto"
+                  )}>
+                    <div className={cn(
+                      "w-8 h-8 rounded-xl flex items-center justify-center shrink-0",
+                      chat.role === 'user' ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                    )}>
+                      {chat.role === 'user' ? <UserIcon className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                    </div>
+                    <div className={cn(
+                      "p-4 rounded-2xl text-sm leading-relaxed",
+                      chat.role === 'user' 
+                        ? "bg-indigo-600 text-white rounded-tr-none shadow-lg shadow-indigo-100 dark:shadow-none" 
+                        : "bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 rounded-tl-none border border-slate-100 dark:border-slate-800"
+                    )}>
+                      <div className="whitespace-pre-wrap">{chat.content}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+              {diagLoading && (
+                <div className="flex gap-4 mr-auto max-w-[85%] animate-pulse">
+                  <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                    <Bot className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-tl-none">
+                    <div className="flex gap-1">
+                      <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce"></div>
+                      <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                      <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800">
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (diagInput.trim()) handleRunDiagnostics();
+                }}
+                className="relative"
+              >
+                <input 
+                  type="text"
+                  value={diagInput}
+                  onChange={(e) => setDiagInput(e.target.value)}
+                  placeholder="Kérdezz a Doktortól..."
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-4 pr-12 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  disabled={diagLoading}
+                />
+                <button 
+                  type="submit"
+                  disabled={diagLoading || !diagInput.trim()}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg disabled:opacity-30 transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderBackups = () => (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -785,6 +967,7 @@ const AdminPanel: React.FC = () => {
       case 'stats': return renderStats();
       case 'catalog': return renderCatalog();
       case 'backups': return renderBackups();
+      case 'diagnostics': return renderDiagnostics();
       default: return renderTable();
     }
   };
@@ -820,6 +1003,16 @@ const AdminPanel: React.FC = () => {
           >
             <Database className="w-3.5 h-3.5" />
             Mentés
+          </button>
+          <button
+            onClick={() => setActiveTab('diagnostics')}
+            className={cn(
+              "px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+              activeTab === 'diagnostics' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            )}
+          >
+            <Stethoscope className="w-3.5 h-3.5" />
+            AI Diagnózis
           </button>
           <button
             onClick={() => setActiveTab('users')}
