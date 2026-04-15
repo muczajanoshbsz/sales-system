@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare, ShieldCheck, ChevronDown, Sparkles, Cpu, Database } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, TrendingUp, Brain, Search, LogOut, User, Map as MapIcon, Menu, X, Settings, Activity, MessageSquare, ShieldCheck, ChevronDown, Sparkles, Cpu, Database, Bell } from 'lucide-react';
 import { Button } from './ui/Base';
 import { useFirebase } from './FirebaseProvider';
 import { logout } from '../firebase';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocation } from 'react-router-dom';
+import { NotificationCenter } from './NotificationCenter';
 
 const Navbar: React.FC = () => {
   const { profile, user, ghostMode, timeTravel } = useFirebase();
@@ -51,7 +52,7 @@ const Navbar: React.FC = () => {
     )}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">
-          <div className="flex items-center gap-4 xl:gap-8 min-w-0 flex-1 mr-4">
+          <div className="flex items-center gap-4 xl:gap-8 min-w-0 flex-1">
             <NavLink to="/" className="flex-shrink-0 flex items-center gap-3 group">
               <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200 group-hover:scale-110 transition-transform duration-300">
                 <Package className="text-white w-6 h-6" />
@@ -61,7 +62,7 @@ const Navbar: React.FC = () => {
               </span>
             </NavLink>
             
-            <div className="hidden md:flex items-center gap-0.5 xl:gap-1 py-2 flex-1 min-w-0">
+            <div className="hidden md:flex items-center gap-0.5 xl:gap-1 py-2 min-w-0">
               {mainItems.map((item) => (
                 <NavLink
                   key={item.id}
@@ -177,7 +178,8 @@ const Navbar: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-4">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-8">
+            <NotificationCenter />
             <div className="hidden md:flex flex-col items-end">
               <span className="text-xs font-bold text-slate-900 dark:text-white uppercase truncate max-w-[120px]">
                 {profile?.displayName || profile?.email || user?.displayName || user?.email || 'Felhasználó'}
@@ -212,6 +214,15 @@ const Navbar: React.FC = () => {
             className="md:hidden bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 overflow-hidden"
           >
             <div className="px-4 py-4 space-y-1">
+              <div className="px-4 py-3 mb-2 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center">
+                    <Bell className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">Értesítések</span>
+                </div>
+                <NotificationCenter />
+              </div>
               {allItems.map((item) => (
                 <NavLink
                   key={item.id}

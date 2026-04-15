@@ -497,4 +497,38 @@ export const apiService = {
     const data = await response.json();
     return data.analysis;
   },
+
+  // Notifications
+  async getNotifications(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/notifications`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async markNotificationRead(id: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/notifications/${id}/read`, {
+      method: 'PUT',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+  },
+
+  async markAllNotificationsRead(): Promise<void> {
+    const response = await fetch(`${API_BASE}/notifications/read-all`, {
+      method: 'PUT',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+  },
+
+  // Weekly Report
+  async getWeeklyReport(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/weekly-report`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
 };

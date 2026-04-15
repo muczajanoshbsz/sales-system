@@ -23,6 +23,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import {OnboardingTour} from './components/OnBoardingtour.tsx';
 import { GhostBar } from './components/GhostBar';
 import { TimeTravelBar } from './components/TimeTravelBar';
+import { NotificationCenter } from './components/NotificationCenter.tsx';
 import { logout } from './firebase';
 import { Ghost } from 'lucide-react';
 import { Button } from './components/ui/Base';

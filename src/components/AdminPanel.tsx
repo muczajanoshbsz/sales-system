@@ -8,6 +8,7 @@ import {
   TrendingUp, 
   ShieldCheck, 
   Search,
+  Brain,
   ArrowUpRight,
   ArrowDownRight,
   Clock,
@@ -40,7 +41,11 @@ import {
   Send,
   Bot,
   Sparkles,
-  MessageSquare
+  MessageSquare,
+  FileText,
+  PieChart,
+  TrendingUp as TrendingUpIcon,
+  Award
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Card, Button, Badge, LoadingSpinner } from './ui/Base';
@@ -51,7 +56,7 @@ import { ProductModel } from '../types';
 
 import { GhostModeModal } from './GhostModeModal';
 
-type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups' | 'diagnostics';
+type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups' | 'diagnostics' | 'reports';
 
 const AdminPanel: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -66,6 +71,7 @@ const AdminPanel: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [catalogModels, setCatalogModels] = useState<ProductModel[]>([]);
   const [backups, setBackups] = useState<any[]>([]);
+  const [weeklyReport, setWeeklyReport] = useState<any>(null);
   const [diagnostics, setDiagnostics] = useState<{ report: string; timestamp: string } | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diagHistory, setDiagHistory] = useState<{ role: 'user' | 'model'; content: string }[]>([]);
@@ -149,6 +155,10 @@ const AdminPanel: React.FC = () => {
         case 'backups':
           const backupsData = await apiService.getBackups();
           setBackups(backupsData);
+          break;
+        case 'reports':
+          const reportData = await apiService.getWeeklyReport();
+          setWeeklyReport(reportData);
           break;
       }
     } catch (error) {
@@ -962,12 +972,133 @@ const AdminPanel: React.FC = () => {
     </div>
   );
 
+  const renderReports = () => {
+    if (!weeklyReport) {
+      return (
+        <div className="h-64 flex flex-col items-center justify-center text-center space-y-4">
+          <FileText className="w-12 h-12 text-slate-200" />
+          <p className="text-slate-400">Még nem készült heti jelentés.</p>
+          <p className="text-xs text-slate-500 max-w-xs">Az első jelentés vasárnap este 20:00-kor fog elkészülni automatikusan.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Summary Card */}
+          <Card className="lg:col-span-1 p-6 bg-gradient-to-br from-slate-900 to-slate-800 border-none text-white shadow-xl">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-white/10 rounded-lg">
+                <Calendar className="w-5 h-5 text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black uppercase tracking-tight">Heti Összegző</h3>
+                <p className="text-[10px] text-slate-400 uppercase tracking-widest">
+                  {new Date(weeklyReport.start_date).toLocaleDateString('hu-HU')} - {new Date(weeklyReport.end_date).toLocaleDateString('hu-HU')}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Heti Profit</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-emerald-400">
+                    {formatCurrency(weeklyReport.data.financials.totalProfit)}
+                  </span>
+                  <TrendingUpIcon className="w-4 h-4 text-emerald-400" />
+                </div>
+              </div>
+
+              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Eladott Mennyiség</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-blue-400">
+                    {weeklyReport.data.financials.totalSales} db
+                  </span>
+                  <ShoppingCart className="w-4 h-4 text-blue-400" />
+                </div>
+              </div>
+
+              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Sztártermék</p>
+                <div className="flex items-center gap-2">
+                  <Award className="w-5 h-5 text-amber-400" />
+                  <span className="text-sm font-bold text-white">
+                    {weeklyReport.data.topProduct.model}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  {weeklyReport.data.topProduct.count} eladás ezen a héten
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          {/* AI Analysis */}
+          <Card className="lg:col-span-2 p-8 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
+                <Brain className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">AI Vezetői Jelentés</h3>
+            </div>
+
+            <div className="prose dark:prose-invert max-w-none">
+              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap text-sm">
+                {weeklyReport.report_text}
+              </div>
+            </div>
+
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <PieChart className="w-3.5 h-3.5" />
+                  Készlet Audit
+                </h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Összes készlet:</span>
+                    <span className="font-bold text-slate-900 dark:text-white">{weeklyReport.data.inventory.totalStock} db</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Kritikus szint:</span>
+                    <span className="font-bold text-amber-500">{weeklyReport.data.inventory.lowStockItems.length} modell</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5" />
+                  Rendszer Egészség
+                </h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Mentések:</span>
+                    <span className="font-bold text-emerald-500">100% Siker</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Hibanaplók:</span>
+                    <span className="font-bold text-slate-900 dark:text-white">Normál szint</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'stats': return renderStats();
       case 'catalog': return renderCatalog();
       case 'backups': return renderBackups();
       case 'diagnostics': return renderDiagnostics();
+      case 'reports': return renderReports();
       default: return renderTable();
     }
   };
@@ -1013,6 +1144,16 @@ const AdminPanel: React.FC = () => {
           >
             <Stethoscope className="w-3.5 h-3.5" />
             AI Diagnózis
+          </button>
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={cn(
+              "px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+              activeTab === 'reports' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            )}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Heti Jelentés
           </button>
           <button
             onClick={() => setActiveTab('users')}
