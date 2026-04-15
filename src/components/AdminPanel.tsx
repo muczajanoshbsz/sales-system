@@ -983,7 +983,7 @@ const AdminPanel: React.FC = () => {
           <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 mt-1">Globális statisztikák és rendszerkezelés</p>
         </div>
         
-        <div className="flex items-center gap-1 sm:gap-2 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto no-scrollbar max-w-full">
+        <div className="flex items-center gap-1 sm:gap-2 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto custom-scrollbar max-w-full pb-2 sm:pb-1">
           <button
             onClick={() => setActiveTab('stats')}
             className={cn(
