@@ -53,6 +53,34 @@ async function runExec(
   return poolOrClient.query(toPgPlaceholders(sql), params);
 }
 
+// --- Backup & Recovery Logic Constants & Helpers ---
+const BACKUP_DIR = path.join(process.cwd(), 'backups');
+if (!fs.existsSync(BACKUP_DIR)) {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+}
+
+const BACKUP_SECRET = process.env.BACKUP_SECRET || 'default-backup-secret-key-32-chars!!';
+
+function encrypt(text: string) {
+  const iv = crypto.randomBytes(16);
+  const key = crypto.scryptSync(BACKUP_SECRET, 'salt', 32);
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+function decrypt(text: string) {
+  const textParts = text.split(':');
+  const iv = Buffer.from(textParts.shift()!, 'hex');
+  const encryptedText = Buffer.from(textParts.join(':'), 'hex');
+  const key = crypto.scryptSync(BACKUP_SECRET, 'salt', 32);
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+  let decrypted = decipher.update(encryptedText);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString();
+}
+
 async function bulkInsert(
   client: pg.PoolClient,
   tableName: string,
@@ -591,6 +619,80 @@ async function startServer() {
 
   const apiRouter = express.Router();
   apiRouter.use(getUserContext);
+
+  // --- Ghost Mode for Backups (Time Travel) ---
+  apiRouter.use(async (req, res, next) => {
+    const backupId = req.headers['x-backup-id'];
+    if (!backupId || backupId === 'null' || backupId === 'undefined' || req.method !== 'GET') return next();
+
+    try {
+      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [backupId]);
+      if (!backup.length) return next();
+
+      let rawData = backup[0].data;
+      if (!rawData) {
+        const filePath = path.join(BACKUP_DIR, backup[0].filename);
+        if (fs.existsSync(filePath)) {
+          rawData = fs.readFileSync(filePath, 'utf8');
+        } else {
+          return next();
+        }
+      }
+      
+      let snapshot;
+      try {
+        if (backup[0].format === 'enc') {
+          snapshot = JSON.parse(decrypt(rawData));
+        } else {
+          snapshot = JSON.parse(rawData);
+        }
+      } catch (e) {
+        console.error('❌ Failed to parse backup for Ghost Mode:', e);
+        return next();
+      }
+
+      const data = snapshot.data || snapshot;
+      const pathName = req.path;
+      const user = (req as any).user;
+      const isAdmin = user?.role === 'admin';
+
+      console.log(`👻 Ghost Mode Active [Backup ${backupId}] Intercepting: ${pathName} for user: ${user?.email}`);
+
+      // Intercept common GET routes
+      if (pathName === '/stock' || pathName === '/admin/stock') {
+          const rows = data.stock || [];
+          return res.json(isAdmin ? rows : rows.filter((r: any) => r.userId === user?.uid));
+      }
+      if (pathName === '/sales' || pathName === '/admin/sales') {
+          const rows = data.sales || [];
+          return res.json(isAdmin ? rows : rows.filter((r: any) => r.userId === user?.uid));
+      }
+      if (pathName === '/pending_sales' || pathName === '/admin/pending_sales') {
+          const rows = data.pending_sales || [];
+          if (pathName === '/admin/pending_sales') return res.json(rows.filter((r: any) => r.status === 'pending'));
+          return res.json(rows.filter((r: any) => r.userId === user?.uid && r.status === 'pending'));
+      }
+      if (pathName === '/admin/audit_logs') return res.json(data.audit_logs || []);
+      if (pathName === '/catalog/models' || pathName === '/admin/catalog/models') return res.json(data.product_models || []);
+      
+      if (pathName === '/admin/stats') {
+          const sales = data.sales || [];
+          const stock = data.stock || [];
+          const users = data.users || [];
+          return res.json({
+              totalSales: sales.length,
+              totalStock: stock.length,
+              totalUsers: users.length,
+              totalProfit: sales.reduce((sum: number, s: any) => sum + (Number(s.profit) || 0), 0)
+          });
+      }
+
+      next();
+    } catch (error) {
+      console.error('❌ Ghost Mode Error:', error);
+      next();
+    }
+  });
 
   apiRouter.get('/ping', (_req, res) => {
     res.json({ status: 'ok', message: 'pong', timestamp: new Date().toISOString() });
@@ -1249,33 +1351,6 @@ async function startServer() {
 
   // --- Backup & Recovery Logic ---
 
-  const BACKUP_DIR = path.join(process.cwd(), 'backups');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  }
-
-  const BACKUP_SECRET = process.env.BACKUP_SECRET || 'default-backup-secret-key-32-chars!!';
-
-  function encrypt(text: string) {
-    const iv = crypto.randomBytes(16);
-    const key = crypto.scryptSync(BACKUP_SECRET, 'salt', 32);
-    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return iv.toString('hex') + ':' + encrypted;
-  }
-
-  function decrypt(text: string) {
-    const textParts = text.split(':');
-    const iv = Buffer.from(textParts.shift()!, 'hex');
-    const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-    const key = crypto.scryptSync(BACKUP_SECRET, 'salt', 32);
-    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
-  }
-
   // Create a backup
   async function createBackup(type: 'auto' | 'manual', createdBy?: string) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1618,46 +1693,6 @@ async function startServer() {
   });
 
   apiRouter.use('/admin', adminRouter);
-
-  // --- Ghost Mode for Backups (Time Travel) ---
-  apiRouter.use(async (req, res, next) => {
-    const backupId = req.headers['x-backup-id'];
-    if (!backupId || req.method !== 'GET') return next();
-
-    try {
-      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [backupId]);
-      if (!backup.length) return next();
-
-      let rawData = backup[0].data;
-      if (!rawData) {
-        const filePath = path.join(BACKUP_DIR, backup[0].filename);
-        if (fs.existsSync(filePath)) {
-          rawData = fs.readFileSync(filePath, 'utf8');
-        } else {
-          return next();
-        }
-      }
-      
-      let snapshot;
-      if (backup[0].format === 'enc') {
-        snapshot = JSON.parse(decrypt(rawData));
-      } else {
-        snapshot = JSON.parse(rawData);
-      }
-
-      const pathName = req.path;
-      // Intercept common GET routes
-      if (pathName === '/stock') return res.json(snapshot.stock);
-      if (pathName === '/sales') return res.json(snapshot.sales);
-      if (pathName === '/pending_sales') return res.json(snapshot.pending_sales);
-      if (pathName === '/admin/audit_logs') return res.json(snapshot.audit_logs);
-      if (pathName === '/catalog/models') return res.json(snapshot.product_models);
-
-      next();
-    } catch (error) {
-      next();
-    }
-  });
 
   // Schedule daily backup at 3 AM
   cron.schedule('0 3 * * *', async () => {
