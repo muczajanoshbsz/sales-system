@@ -531,4 +531,13 @@ export const apiService = {
     await handleResponse(response);
     return await response.json();
   },
+
+  async testSendReport(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/reports/test-send`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
 };

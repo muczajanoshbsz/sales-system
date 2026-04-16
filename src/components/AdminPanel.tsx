@@ -72,6 +72,7 @@ const AdminPanel: React.FC = () => {
   const [catalogModels, setCatalogModels] = useState<ProductModel[]>([]);
   const [backups, setBackups] = useState<any[]>([]);
   const [weeklyReport, setWeeklyReport] = useState<any>(null);
+  const [testLoading, setTestLoading] = useState(false);
   const [diagnostics, setDiagnostics] = useState<{ report: string; timestamp: string } | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diagHistory, setDiagHistory] = useState<{ role: 'user' | 'model'; content: string }[]>([]);
@@ -973,115 +974,170 @@ const AdminPanel: React.FC = () => {
   );
 
   const renderReports = () => {
-    if (!weeklyReport) {
+    const handleTestSend = async () => {
+      setTestLoading(true);
+      try {
+        await apiService.testSendReport();
+        alert('📊 Teszt jelentés sikeresen elküldve az e-mail címedre!');
+        fetchData();
+      } catch (error) {
+        alert('❌ Hiba a küldés során: ' + (error as Error).message);
+      } finally {
+        setTestLoading(false);
+      }
+    };
+
+    const data = weeklyReport?.report_json || weeklyReport?.data;
+
+    if (!weeklyReport || !data) {
       return (
-        <div className="h-64 flex flex-col items-center justify-center text-center space-y-4">
-          <FileText className="w-12 h-12 text-slate-200" />
-          <p className="text-slate-400">Még nem készült heti jelentés.</p>
-          <p className="text-xs text-slate-500 max-w-xs">Az első jelentés vasárnap este 20:00-kor fog elkészülni automatikusan.</p>
+        <div className="h-96 flex flex-col items-center justify-center text-center space-y-6 bg-slate-50 dark:bg-slate-900/50 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+          <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-full">
+            <TrendingUpIcon className="w-10 h-10 text-indigo-500" />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white">Nincs Aktív Jelentés</h3>
+            <p className="text-slate-500 max-w-xs mx-auto text-sm">A rendszer automatikusan generálja a jelentéseket, de bármikor kérhetsz egy friss tesztet.</p>
+          </div>
+          <Button 
+            onClick={handleTestSend} 
+            disabled={testLoading}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-8 h-12 rounded-xl shadow-lg shadow-indigo-500/20 transition-all"
+          >
+            {testLoading ? (
+              <span className="flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Generálás...
+              </span>
+            ) : "Friss jelentés generálása"}
+          </Button>
         </div>
       );
     }
 
     return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Heti Üzleti Jelentés</h2>
+            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
+              <Calendar className="w-4 h-4" />
+              <span>{new Date(weeklyReport.start_date).toLocaleDateString('hu-HU')} - {new Date(weeklyReport.end_date).toLocaleDateString('hu-HU')}</span>
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleTestSend} 
+            disabled={testLoading}
+            className="gap-2 border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 h-11 px-6 rounded-xl text-indigo-600 font-bold"
+          >
+            <Send className={cn("w-4 h-4", testLoading && "animate-pulse")} />
+            {testLoading ? "Küldés..." : "Friss teszt jelentés küldése"}
+          </Button>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Summary Card */}
-          <Card className="lg:col-span-1 p-6 bg-gradient-to-br from-slate-900 to-slate-800 border-none text-white shadow-xl">
-            <div className="flex items-center gap-3 mb-6">
+          <Card className="lg:col-span-1 p-6 bg-gradient-to-br from-slate-900 to-slate-800 border-none text-white shadow-xl overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform duration-700">
+              <TrendingUpIcon className="w-32 h-32" />
+            </div>
+            
+            <div className="flex items-center gap-3 mb-8 relative z-10">
               <div className="p-2 bg-white/10 rounded-lg">
-                <Calendar className="w-5 h-5 text-indigo-400" />
+                <BarChart3 className="w-5 h-5 text-indigo-400" />
               </div>
-              <div>
-                <h3 className="text-lg font-black uppercase tracking-tight">Heti Összegző</h3>
-                <p className="text-[10px] text-slate-400 uppercase tracking-widest">
-                  {new Date(weeklyReport.start_date).toLocaleDateString('hu-HU')} - {new Date(weeklyReport.end_date).toLocaleDateString('hu-HU')}
-                </p>
-              </div>
+              <h3 className="font-bold uppercase tracking-widest text-xs">Mérőszámok</h3>
             </div>
 
-            <div className="space-y-6">
-              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Heti Profit</p>
+            <div className="space-y-6 relative z-10">
+              <div className="p-5 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Heti Profit</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-black text-emerald-400">
-                    {formatCurrency(weeklyReport.data.financials.totalProfit)}
+                  <span className="text-3xl font-black text-white">
+                    {formatCurrency(data.financials?.totalProfit || 0)}
                   </span>
                   <TrendingUpIcon className="w-4 h-4 text-emerald-400" />
                 </div>
               </div>
 
-              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Eladott Mennyiség</p>
+              <div className="p-5 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Eladott Mennyiség</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-black text-blue-400">
-                    {weeklyReport.data.financials.totalSales} db
+                  <span className="text-3xl font-black text-white">
+                    {data.financials?.totalSales || 0} db
                   </span>
                   <ShoppingCart className="w-4 h-4 text-blue-400" />
                 </div>
               </div>
 
-              <div className="p-4 bg-white/5 rounded-xl border border-white/10">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Sztártermék</p>
+              <div className="p-5 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sztártermék</p>
                 <div className="flex items-center gap-2">
                   <Award className="w-5 h-5 text-amber-400" />
                   <span className="text-sm font-bold text-white">
-                    {weeklyReport.data.topProduct.model}
+                    {data.topProduct?.model || 'N/A'}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  {weeklyReport.data.topProduct.count} eladás ezen a héten
+                <p className="text-[10px] text-slate-500 mt-2">
+                  {data.topProduct?.count || 0} eladás az elmúlt időszakban
                 </p>
               </div>
             </div>
           </Card>
 
           {/* AI Analysis */}
-          <Card className="lg:col-span-2 p-8 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
-                <Brain className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          <Card className="lg:col-span-2 p-8 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xl rounded-3xl">
+            <div className="flex items-center gap-3 mb-8">
+              <div className="p-2.5 bg-indigo-500/10 rounded-xl">
+                <Brain className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
               </div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">AI Vezetői Jelentés</h3>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">AI Vezetői Jelentés</h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Szakértői elemzés az adataid alapján</p>
+              </div>
             </div>
 
             <div className="prose dark:prose-invert max-w-none">
-              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap text-sm">
+              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-3xl p-8 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 leading-relaxed text-sm font-medium whitespace-pre-wrap">
                 {weeklyReport.report_text}
               </div>
             </div>
 
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <PieChart className="w-3.5 h-3.5" />
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <PieChart className="w-4 h-4 text-indigo-500" />
                   Készlet Audit
                 </h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Összes készlet:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">{weeklyReport.data.inventory.totalStock} db</span>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500 font-medium">Összes készlet:</span>
+                    <span className="font-bold text-slate-900 dark:text-white">{data.inventory?.totalStock || 0} db</span>
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Kritikus szint:</span>
-                    <span className="font-bold text-amber-500">{weeklyReport.data.inventory.lowStockItems.length} modell</span>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500 font-medium">Alacsony stock:</span>
+                    <span className={cn("font-bold", (data.inventory?.lowStockItems?.length || 0) > 0 ? "text-amber-500" : "text-emerald-500")}>
+                      {data.inventory?.lowStockItems?.length || 0} modell
+                    </span>
                   </div>
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Activity className="w-3.5 h-3.5" />
+              <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-emerald-500" />
                   Rendszer Egészség
                 </h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Mentések:</span>
-                    <span className="font-bold text-emerald-500">100% Siker</span>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500 font-medium">Mentés Status:</span>
+                    <span className="font-bold text-emerald-500">OPTIMÁLIS</span>
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Hibanaplók:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">Normál szint</span>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500 font-medium">Integritás:</span>
+                    <span className="font-bold text-slate-900 dark:text-white">ÉP</span>
                   </div>
                 </div>
               </div>

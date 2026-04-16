@@ -9,6 +9,9 @@ import dotenv from 'dotenv';
 import os from 'os';
 import cron from 'node-cron';
 import * as XLSX from 'xlsx';
+import nodemailer from 'nodemailer';
+import { jsPDF } from 'jspdf';
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -16,6 +19,8 @@ const { Pool } = pg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+let ai: GoogleGenAI;
 
 function getLocalIp() {
   const interfaces = os.networkInterfaces();
@@ -164,34 +169,20 @@ function safeJsonParse<T>(text: string): T {
 }
 
 async function callGeminiJSON<T>(apiKey: string, prompt: string): Promise<T> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
-          },
-        ],
-      }),
+  const result = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    config: {
+      responseMimeType: "application/json"
     }
-  );
+  });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || 'Gemini request failed');
-  }
-
-  const text = extractResponseText(data);
+  const text = result.text;
   if (!text) {
     throw new Error('Empty Gemini response');
   }
 
-  return safeJsonParse<T>(text);
+  return JSON.parse(text) as T;
 }
 
 async function callGeminiChat(
@@ -200,33 +191,19 @@ async function callGeminiChat(
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
   message: string
 ): Promise<string> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: systemInstruction }],
-        },
-        contents: [
-          ...history,
-          { role: 'user', parts: [{ text: message }] },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-        },
-      }),
+  const result = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: [
+      ...history.map(h => ({ role: h.role, parts: h.parts })),
+      { role: 'user', parts: [{ text: message }] }
+    ],
+    config: {
+      systemInstruction: systemInstruction,
+      temperature: 0.7,
     }
-  );
+  });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || 'Gemini chat request failed');
-  }
-
-  return extractResponseText(data);
+  return result.text || 'Nincs válasz az AI-tól.';
 }
 
 async function startServer() {
@@ -260,6 +237,8 @@ async function startServer() {
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 15000,
   });
+
+  ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
   try {
     await pool.query('SELECT 1');
@@ -544,6 +523,270 @@ async function startServer() {
   };
 
   await initDb();
+
+  async function sendWeeklyReportEmail(reportData: any, reportText: string, startDate: Date, endDate: Date) {
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = Number(process.env.SMTP_PORT) || 587;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    const smtpFrom = process.env.SMTP_FROM || smtpUser;
+    const receiverEmail = process.env.REPORT_RECEIVER_EMAIL;
+
+    if (!smtpHost || !smtpUser || !smtpPass || !receiverEmail) {
+      console.warn('⚠️ SMTP not fully configured. Skipping email report.');
+      return;
+    }
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      // Generate PDF
+      const doc = new jsPDF();
+      const margin = 20;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      let y = 0;
+
+      // Header Bar
+      doc.setFillColor(79, 70, 229); // Indigo-600
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      
+      y = 25;
+      doc.setFontSize(24);
+      doc.setTextColor(255, 255, 255);
+      doc.text('AirPods Manager', margin, y);
+      
+      doc.setFontSize(10);
+      doc.text('UZLETI JELENTES', pageWidth - margin - 35, y - 5);
+      doc.text(`${startDate.toLocaleDateString('hu-HU')} - ${endDate.toLocaleDateString('hu-HU')}`, pageWidth - margin - 45, y + 5);
+      
+      y = 55;
+      doc.setTextColor(30, 41, 59); // Slate-800
+      doc.setFontSize(16);
+      doc.text('Vezetoi Osszefoglalo', margin, y);
+      y += 10;
+      
+      // Stats Boxes
+      const boxWidth = (pageWidth - (margin * 2) - 10) / 3;
+      const boxHeight = 25;
+
+      // Profit Box
+      doc.setFillColor(240, 253, 244); // bg-emerald-50
+      doc.rect(margin, y, boxWidth, boxHeight, 'F');
+      doc.setFontSize(8);
+      doc.setTextColor(21, 128, 61); // emerald-700
+      doc.text('HETI PROFIT', margin + 5, y + 7);
+      doc.setFontSize(11);
+      doc.text(`${reportData.totalProfit.toLocaleString('hu-HU')} Ft`, margin + 5, y + 17);
+
+      // Sales Box
+      doc.setFillColor(239, 246, 255); // bg-blue-50
+      doc.rect(margin + boxWidth + 5, y, boxWidth, boxHeight, 'F');
+      doc.setFontSize(8);
+      doc.setTextColor(29, 78, 216); // blue-700
+      doc.text('ELADOTT DARAB', margin + boxWidth + 10, y + 7);
+      doc.setFontSize(11);
+      doc.text(`${reportData.salesCount} db`, margin + boxWidth + 10, y + 17);
+
+      // Star Product Box
+      doc.setFillColor(255, 251, 235); // bg-amber-50
+      doc.rect(margin + (boxWidth * 2) + 10, y, boxWidth, boxHeight, 'F');
+      doc.setFontSize(8);
+      doc.setTextColor(180, 83, 9); // amber-700
+      doc.text('SZTARTERMEK', margin + (boxWidth * 2) + 15, y + 7);
+      doc.setFontSize(9);
+      const starText = reportData.starProduct.length > 20 ? reportData.starProduct.substring(0, 17) + '...' : reportData.starProduct;
+      doc.text(starText, margin + (boxWidth * 2) + 15, y + 17);
+
+      y += 40;
+
+      // AI Analysis Content
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(14);
+      doc.text('AI Business Insights', margin, y);
+      y += 10;
+
+      doc.setFontSize(10);
+      doc.setTextColor(51, 65, 85);
+      
+      const splitText = doc.splitTextToSize(reportText, pageWidth - (margin * 2));
+      for (let i = 0; i < splitText.length; i++) {
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(splitText[i], margin, y);
+        y += 6;
+      }
+
+      // Footer
+      const footerY = doc.internal.pageSize.getHeight() - 10;
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text('Generalva az AirPods Manager altal', margin, footerY);
+      doc.text(`Keszult: ${new Date().toLocaleString('hu-HU')}`, pageWidth - margin - 50, footerY);
+
+      const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+
+      // Send Email
+      await transporter.sendMail({
+        from: `"AirPods Manager" <${smtpFrom}>`,
+        to: receiverEmail,
+        subject: `📊 Heti Jelentés: ${startDate.toLocaleDateString('hu-HU')} - ${endDate.toLocaleDateString('hu-HU')}`,
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; color: #334155; background-color: #f8fafc; border-radius: 24px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #4f46e5; margin: 0; font-size: 28px; font-weight: 800;">AirPods Manager</h1>
+              <p style="color: #94a3b8; font-size: 14px; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.1em;">Üzleti Elemzés</p>
+            </div>
+            
+            <div style="background-color: white; border-radius: 20px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+              <h2 style="color: #0f172a; font-size: 20px; margin-top: 0; margin-bottom: 16px;">Szia! 👋</h2>
+              <p style="line-height: 1.6; margin-bottom: 24px;">Elkészítettük az elmúlt időszak adatait összegző üzleti jelentésedet.</p>
+              
+              <div style="background-color: #f0fdf4; border-radius: 12px; padding: 16px; border: 1px solid #dcfce7; margin-bottom: 24px;">
+                <span style="display: block; font-size: 11px; font-weight: 700; color: #15803d; text-transform: uppercase; margin-bottom: 4px;">Heti Profit</span>
+                <span style="font-size: 20px; font-weight: 800; color: #166534;">${reportData.totalProfit.toLocaleString('hu-HU')} Ft</span>
+              </div>
+
+              <p style="font-size: 14px; color: #64748b; line-height: 1.6;">
+                A csatolt PDF dokumentumban találod a részletes AI elemzést és a javaslatokat.
+              </p>
+            </div>
+          </div>
+        `,
+        attachments: [
+          {
+            filename: `Heti_Jelentes_${endDate.toISOString().split('T')[0]}.pdf`,
+            content: pdfBuffer,
+          },
+        ],
+      });
+
+      console.log('✅ Weekly report email sent successfully to:', receiverEmail);
+    } catch (error) {
+      console.error('❌ Failed to send weekly report email:', error);
+    }
+  }
+
+  async function generateAndSendReport(daysBefore: number = 14) {
+    console.log(`Generating report for the last ${daysBefore} days...`);
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Weekly report failed: Gemini API key not configured');
+    }
+
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - daysBefore);
+
+    // Gather data
+    const [sales, stock, backups, auditLogs, users] = await Promise.all([
+      runQuery(pool, 'SELECT * FROM sales WHERE created_at >= ?', [startDate.toISOString()]),
+      runQuery(pool, 'SELECT * FROM stock'),
+      runQuery(pool, 'SELECT * FROM backups WHERE created_at >= ?', [startDate.toISOString()]),
+      runQuery(pool, 'SELECT * FROM audit_logs WHERE "timestamp" >= ?', [startDate.toISOString()]),
+      runQuery(pool, 'SELECT uid, email, role FROM users')
+    ]);
+
+    const totalProfit = sales.reduce((sum, s) => sum + (Number(s.profit) || 0), 0);
+    const totalStockValue = stock.reduce((sum, s) => sum + (Number(s.buy_price) * Number(s.quantity) || 0), 0);
+    
+    // Find star product
+    const modelCounts: Record<string, number> = {};
+    sales.forEach(s => {
+      modelCounts[s.model] = (modelCounts[s.model] || 0) + 1;
+    });
+    const starProduct = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+    const prompt = `
+      You are a professional business analyst for an AirPods reseller business.
+      Generate a "Business Balance Report" in Hungarian for the last ${daysBefore} days.
+      
+      Data for the period (${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}):
+      - Total Sales: ${sales.length}
+      - Total Profit: ${totalProfit.toLocaleString('hu-HU')} Ft
+      - Star Product: ${starProduct}
+      - Total Stock Value: ${totalStockValue.toLocaleString('hu-HU')} Ft
+      - Backups: ${backups.length}
+      - System Audit Logs: ${auditLogs.length}
+      
+      The report should be professional, encouraging, and insightful.
+      Format the response as a JSON object with the following structure:
+      {
+        "financial_balance": "text about profit and comparison",
+        "star_product": "text about the best selling product",
+        "stock_audit": "text about stock value and aging items",
+        "system_health": "text about backups and errors",
+        "next_week_plan": "text about strategy for next week",
+        "summary_text": "a full cohesive markdown report"
+      }
+      
+      Ensure the tone is professional and the Hungarian is natural.
+    `;
+
+    const reportJson = await callGeminiJSON<any>(apiKey, prompt);
+
+    const reportData = {
+      financials: {
+        totalSales: sales.length,
+        totalProfit: totalProfit,
+        totalStockValue: totalStockValue
+      },
+      topProduct: {
+        model: starProduct,
+        count: modelCounts[starProduct] || 0
+      },
+      inventory: {
+        totalStock: stock.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0),
+        lowStockItems: stock.filter(s => Number(s.quantity) < 5).map(s => s.model)
+      },
+      aiAnalysis: reportJson
+    };
+
+    // Store for each admin
+    const admins = users.filter(u => u.role === 'admin');
+    for (const admin of admins) {
+      await runExec(pool, `
+        INSERT INTO weekly_reports ("userId", start_date, end_date, report_json, report_text)
+        VALUES (?, ?, ?, ?, ?)
+      `, [
+        admin.uid, 
+        startDate.toISOString().split('T')[0], 
+        endDate.toISOString().split('T')[0], 
+        JSON.stringify(reportData),
+        reportJson.summary_text
+      ]);
+
+      await createNotification(
+        pool, 
+        admin.uid, 
+        'info', 
+        'Üzleti jelentés elkészült', 
+        `📊 A ${daysBefore} napos üzleti mérleg elkészült. Nézd meg az Admin Panelben!`
+      );
+
+      // Send Email Report
+      await sendWeeklyReportEmail(
+        {
+          salesCount: sales.length,
+          totalProfit: totalProfit,
+          starProduct: starProduct
+        },
+        reportJson.summary_text,
+        startDate,
+        endDate
+      );
+    }
+    return reportJson;
+  }
 
   const logActivity = async (userId: string, action: string, details: string, req?: express.Request) => {
     let finalDetails = details;
@@ -1809,101 +2052,21 @@ async function startServer() {
 
   // Schedule Weekly Report on Sunday at 8 PM (20:00)
   cron.schedule('0 20 * * 0', async () => {
-    console.log('Generating Sunday Evening Balance (Weekly Report)...');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.error('Weekly report failed: Gemini API key not configured');
-      return;
-    }
-
+    console.log('Generating Scheduled Business Report...');
     try {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - 7);
-
-      // Gather data for the week
-      const [sales, stock, backups, auditLogs, users] = await Promise.all([
-        runQuery(pool, 'SELECT * FROM sales WHERE created_at >= ?', [startDate.toISOString()]),
-        runQuery(pool, 'SELECT * FROM stock'),
-        runQuery(pool, 'SELECT * FROM backups WHERE created_at >= ?', [startDate.toISOString()]),
-        runQuery(pool, 'SELECT * FROM audit_logs WHERE "timestamp" >= ?', [startDate.toISOString()]),
-        runQuery(pool, 'SELECT uid, email, role FROM users')
-      ]);
-
-      const totalProfit = sales.reduce((sum, s) => sum + (Number(s.profit) || 0), 0);
-      const totalStockValue = stock.reduce((sum, s) => sum + (Number(s.buy_price) * Number(s.quantity) || 0), 0);
-      
-      // Find star product
-      const modelCounts: Record<string, number> = {};
-      sales.forEach(s => {
-        modelCounts[s.model] = (modelCounts[s.model] || 0) + 1;
-      });
-      const starProduct = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-
-      const prompt = `
-        You are a professional business analyst for an AirPods reseller business.
-        Generate a "Sunday Evening Balance" (Weekly Report) in Hungarian.
-        
-        Data for the week (${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}):
-        - Total Sales: ${sales.length}
-        - Total Profit: ${totalProfit.toLocaleString('hu-HU')} Ft
-        - Star Product: ${starProduct}
-        - Total Stock Value: ${totalStockValue.toLocaleString('hu-HU')} Ft
-        - Backups this week: ${backups.length}
-        - System Audit Logs: ${auditLogs.length}
-        
-        The report should be professional, encouraging, and insightful.
-        Format the response as a JSON object with the following structure:
-        {
-          "financial_balance": "text about profit and comparison",
-          "star_product": "text about the best selling product",
-          "stock_audit": "text about stock value and aging items",
-          "system_health": "text about backups and errors",
-          "next_week_plan": "text about strategy for next week",
-          "summary_text": "a full cohesive markdown report"
-        }
-        
-        Ensure the tone is professional and the Hungarian is natural.
-      `;
-
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json" }
-        })
-      });
-
-      const result = await response.json();
-      const reportJson = JSON.parse(result.candidates[0].content.parts[0].text);
-
-      // Store for each admin
-      const admins = users.filter(u => u.role === 'admin');
-      for (const admin of admins) {
-        await runExec(pool, `
-          INSERT INTO weekly_reports ("userId", start_date, end_date, report_json, report_text)
-          VALUES (?, ?, ?, ?, ?)
-        `, [
-          admin.uid, 
-          startDate.toISOString().split('T')[0], 
-          endDate.toISOString().split('T')[0], 
-          JSON.stringify(reportJson),
-          reportJson.summary_text
-        ]);
-
-        await createNotification(
-          pool, 
-          admin.uid, 
-          'info', 
-          'Heti jelentés elkészült', 
-          '📊 A Vasárnap Esti Mérleg elkészült. Nézd meg az Admin Panelben!'
-        );
-      }
-
-      console.log('Weekly report generated successfully');
+      await generateAndSendReport(14);
+      console.log('Scheduled business report generated successfully');
     } catch (error) {
-      console.error('Weekly report generation failed:', error);
+      console.error('Scheduled business report generation failed:', error);
+    }
+  });
+
+  apiRouter.post('/admin/reports/test-send', checkAdmin, async (req, res) => {
+    try {
+      const result = await generateAndSendReport(14);
+      res.json({ success: true, report: result });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
     }
   });
 
