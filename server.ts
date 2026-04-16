@@ -554,84 +554,141 @@ async function startServer() {
       const pageWidth = doc.internal.pageSize.getWidth();
       let y = 0;
 
+      // Fix Hungarian double acute characters (jsPDF standard fonts don't support them)
+      const normalizeHungarian = (text: string) => {
+        return text
+          .replace(/ő/g, 'ö').replace(/ő/g, 'ö')
+          .replace(/ű/g, 'ü').replace(/ű/g, 'ü')
+          .replace(/Ő/g, 'Ö').replace(/Ő/g, 'Ö')
+          .replace(/Ű/g, 'Ü').replace(/Ű/g, 'Ü');
+      };
+
       // Header Bar
-      doc.setFillColor(79, 70, 229); // Indigo-600
-      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setFillColor(30, 41, 59); // Slate-900 (Darker, more professional)
+      doc.rect(0, 0, pageWidth, 50, 'F');
       
-      y = 25;
-      doc.setFontSize(24);
+      y = 30;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(28);
       doc.setTextColor(255, 255, 255);
       doc.text('AirPods Manager', margin, y);
       
       doc.setFontSize(10);
-      doc.text('UZLETI JELENTES', pageWidth - margin - 35, y - 5);
-      doc.text(`${startDate.toLocaleDateString('hu-HU')} - ${endDate.toLocaleDateString('hu-HU')}`, pageWidth - margin - 45, y + 5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(148, 163, 184); // Slate-400
+      doc.text('PREMIUM ÜZLETI ELEMZÉS', margin, y + 10);
       
-      y = 55;
-      doc.setTextColor(30, 41, 59); // Slate-800
-      doc.setFontSize(16);
-      doc.text('Vezetoi Osszefoglalo', margin, y);
-      y += 10;
+      doc.setTextColor(255, 255, 255);
+      const dateRange = `IDŐSZAK: ${startDate.toLocaleDateString('hu-HU')} - ${endDate.toLocaleDateString('hu-HU')}`;
+      doc.text(dateRange, pageWidth - margin - doc.getTextWidth(dateRange), y);
+      
+      y = 70;
+      doc.setTextColor(15, 23, 42); // Slate-900
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text(normalizeHungarian('Vezetői Összefoglaló'), margin, y);
+      
+      // Decoration line
+      doc.setDrawColor(79, 70, 229); // Indigo-600
+      doc.setLineWidth(1);
+      doc.line(margin, y + 4, margin + 40, y + 4);
+      
+      y += 20;
       
       // Stats Boxes
       const boxWidth = (pageWidth - (margin * 2) - 10) / 3;
-      const boxHeight = 25;
+      const boxHeight = 35;
 
-      // Profit Box
-      doc.setFillColor(240, 253, 244); // bg-emerald-50
-      doc.rect(margin, y, boxWidth, boxHeight, 'F');
-      doc.setFontSize(8);
-      doc.setTextColor(21, 128, 61); // emerald-700
-      doc.text('HETI PROFIT', margin + 5, y + 7);
-      doc.setFontSize(11);
-      doc.text(`${reportData.totalProfit.toLocaleString('hu-HU')} Ft`, margin + 5, y + 17);
+      const drawStatBox = (x: number, y: number, label: string, value: string, color: [number, number, number], bgColor: [number, number, number]) => {
+        doc.setFillColor(...bgColor);
+        doc.roundedRect(x, y, boxWidth, boxHeight, 3, 3, 'F');
+        
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...color);
+        doc.text(label, x + 8, y + 12);
+        
+        doc.setFontSize(14);
+        doc.text(value, x + 8, y + 25);
+      };
 
-      // Sales Box
-      doc.setFillColor(239, 246, 255); // bg-blue-50
-      doc.rect(margin + boxWidth + 5, y, boxWidth, boxHeight, 'F');
-      doc.setFontSize(8);
-      doc.setTextColor(29, 78, 216); // blue-700
-      doc.text('ELADOTT DARAB', margin + boxWidth + 10, y + 7);
-      doc.setFontSize(11);
-      doc.text(`${reportData.salesCount} db`, margin + boxWidth + 10, y + 17);
+      drawStatBox(margin, y, 'HETI PROFIT', `${reportData.totalProfit.toLocaleString('hu-HU')} Ft`, [21, 128, 61], [240, 253, 244]);
+      drawStatBox(margin + boxWidth + 5, y, 'ELADOTT DARAB', `${reportData.salesCount} db`, [29, 78, 216], [239, 246, 255]);
+      
+      const starText = reportData.starProduct.length > 18 ? reportData.starProduct.substring(0, 15) + '...' : reportData.starProduct;
+      drawStatBox(margin + (boxWidth * 2) + 10, y, 'SZTÁRTERMÉK', normalizeHungarian(starText), [180, 83, 9], [255, 251, 235]);
 
-      // Star Product Box
-      doc.setFillColor(255, 251, 235); // bg-amber-50
-      doc.rect(margin + (boxWidth * 2) + 10, y, boxWidth, boxHeight, 'F');
-      doc.setFontSize(8);
-      doc.setTextColor(180, 83, 9); // amber-700
-      doc.text('SZTARTERMEK', margin + (boxWidth * 2) + 15, y + 7);
-      doc.setFontSize(9);
-      const starText = reportData.starProduct.length > 20 ? reportData.starProduct.substring(0, 17) + '...' : reportData.starProduct;
-      doc.text(starText, margin + (boxWidth * 2) + 15, y + 17);
-
-      y += 40;
+      y += 55;
 
       // AI Analysis Content
-      doc.setTextColor(30, 41, 59);
+      doc.setTextColor(15, 23, 42);
       doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
       doc.text('AI Business Insights', margin, y);
-      y += 10;
+      y += 12;
 
+      // Text Area Background
+      const startY = y;
+      
       doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
       doc.setTextColor(51, 65, 85);
       
-      const splitText = doc.splitTextToSize(reportText, pageWidth - (margin * 2));
-      for (let i = 0; i < splitText.length; i++) {
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
+      const cleanMarkdown = (text: string) => {
+        return normalizeHungarian(text)
+          .replace(/#{1,6}\s?/g, '') // Remove headers notation
+          .replace(/\*\*/g, '')      // Remove bold notation
+          .replace(/\*/g, '•')       // Bullet points
+          .trim();
+      };
+
+      const lines = reportText.split('\n');
+      for (const line of lines) {
+        if (!line.trim()) {
+          y += 5;
+          continue;
         }
-        doc.text(splitText[i], margin, y);
-        y += 6;
+
+        let isHeader = false;
+        let processedLine = line.trim();
+
+        if (line.startsWith('#')) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(12);
+          doc.setTextColor(30, 41, 59);
+          isHeader = true;
+          processedLine = cleanMarkdown(line);
+        } else {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(71, 85, 105);
+          processedLine = cleanMarkdown(line);
+        }
+
+        const splitLine = doc.splitTextToSize(processedLine, pageWidth - (margin * 2));
+        
+        for (const sLine of splitLine) {
+          if (y > 275) {
+            doc.addPage();
+            y = 20;
+          }
+          doc.text(sLine, margin, y);
+          y += isHeader ? 8 : 6;
+        }
+        
+        if (isHeader) y += 2;
       }
 
       // Footer
-      const footerY = doc.internal.pageSize.getHeight() - 10;
+      const footerY = doc.internal.pageSize.getHeight() - 15;
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.line(margin, footerY - 5, pageWidth - margin, footerY - 5);
+      
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184);
-      doc.text('Generalva az AirPods Manager altal', margin, footerY);
-      doc.text(`Keszult: ${new Date().toLocaleString('hu-HU')}`, pageWidth - margin - 50, footerY);
+      doc.text('Generálva az AirPods Manager intelligens rendszere által', margin, footerY);
+      doc.text(`Készült: ${new Date().toLocaleString('hu-HU')}`, pageWidth - margin - doc.getTextWidth(`Készült: ${new Date().toLocaleString('hu-HU')}`), footerY);
 
       const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
 
@@ -772,19 +829,20 @@ async function startServer() {
         'Üzleti jelentés elkészült', 
         `📊 A ${daysBefore} napos üzleti mérleg elkészült. Nézd meg az Admin Panelben!`
       );
-
-      // Send Email Report
-      await sendWeeklyReportEmail(
-        {
-          salesCount: sales.length,
-          totalProfit: totalProfit,
-          starProduct: starProduct
-        },
-        reportJson.summary_text,
-        startDate,
-        endDate
-      );
     }
+
+    // Send Email Report ONCE for the system
+    await sendWeeklyReportEmail(
+      {
+        salesCount: sales.length,
+        totalProfit: totalProfit,
+        starProduct: starProduct
+      },
+      reportJson.summary_text,
+      startDate,
+      endDate
+    );
+
     return reportJson;
   }
 
