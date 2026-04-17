@@ -88,6 +88,10 @@ function decrypt(text: string) {
   return decrypted.toString();
 }
 
+function calculateHash(data: string | Buffer): string {
+  return crypto.createHash('sha256').update(data).digest('hex');
+}
+
 async function createNotification(pool: pg.Pool, userId: string, type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) {
   try {
     await runExec(pool, `
@@ -781,6 +785,10 @@ async function startServer() {
       - Star Product: ${starProduct}
       - Total Stock Value: ${totalStockValue.toLocaleString('hu-HU')} Ft
       - Backups: ${backups.length}
+      - Google Drive Sync: ${backups.filter(b => {
+          const meta = b.metadata || {};
+          return meta.googleDriveId || meta.vaultStatus === 'completed';
+        }).length}/${backups.length} successful
       - System Audit Logs: ${auditLogs.length}
       
       The report should be professional, encouraging, and insightful.
@@ -1714,7 +1722,15 @@ async function startServer() {
     const dbSnapshot: Record<string, any> = {};
     for (const table of tables) {
       try {
-        dbSnapshot[table] = await runQuery(pool, `SELECT * FROM "${table}"`);
+        if (table === 'backups') {
+          // IMPORTANT: Exclude the large 'data' field to save memory
+          dbSnapshot[table] = await runQuery(pool, `SELECT id, filename, size, type, format, created_by, created_at, metadata FROM "${table}"`);
+        } else if (table === 'audit_logs') {
+          // IMPORTANT: Limit logs to the last 1000 entries
+          dbSnapshot[table] = await runQuery(pool, `SELECT * FROM "${table}" ORDER BY timestamp DESC LIMIT 1000`);
+        } else {
+          dbSnapshot[table] = await runQuery(pool, `SELECT * FROM "${table}"`);
+        }
       } catch (e) {
         console.warn(`Failed to snapshot table ${table}:`, e);
       }
@@ -1778,7 +1794,11 @@ async function startServer() {
     const snapshot: Record<string, any> = {};
 
     for (const table of tables) {
-      snapshot[table] = await runQuery(pool, `SELECT * FROM "${table}"`);
+      if (table === 'audit_logs') {
+        snapshot[table] = await runQuery(pool, `SELECT * FROM "${table}" ORDER BY timestamp DESC LIMIT 1000`);
+      } else {
+        snapshot[table] = await runQuery(pool, `SELECT * FROM "${table}"`);
+      }
     }
 
     const encryptedData = encrypt(JSON.stringify(snapshot));
@@ -2057,19 +2077,18 @@ async function startServer() {
     }
   });
 
-  // Google Drive Vault Upload (OAuth 2.0 - .env alapú, ingyenes verzió)
+  // Google Drive Vault Upload (Professional Version: Resumable, Checksum, Retention)
   async function uploadToGoogleDrive(filename: string, dataB64: string) {
-    // Adatok kinyerése a környezeti változókból
     const client_id = process.env.GOOGLE_DRIVE_CLIENT_ID;
     const client_secret = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
     const refresh_token = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
     const folder_id = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
     if (!client_id || !client_secret || !refresh_token) {
-      throw new Error('Hiányzó Google Drive beállítások az .env fájlban!');
+      throw new Error('Hiányzó Google Drive beállítások!');
     }
 
-    // 1. Hitelesítés: Új Access Token kérése a Refresh Token segítségével
+    // 1. Get Access Token
     const authRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -2077,74 +2096,141 @@ async function startServer() {
     });
     
     const authData = await authRes.json() as any;
-    if (!authData.access_token) {
-      throw new Error('Google OAuth hiba: ' + (authData.error_description || authData.error || 'Ismeretlen hiba'));
-    }
-    
+    if (!authData.access_token) throw new Error('Google OAuth hiba');
     const accessToken = authData.access_token;
 
-    // 2. LÉPÉS: A fájl metaadatainak létrehozása (Név és Mappa)
-    const metadata = { name: filename, parents: folder_id ? [folder_id] : [] };
-    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    // 2. Calculate Checksum
+    const buffer = Buffer.from(dataB64, 'utf8');
+    const checksum = calculateHash(buffer);
+
+    // 3. Initiate Resumable Upload
+    const metadata = { 
+      name: filename, 
+      parents: folder_id ? [folder_id] : [],
+      description: `Checksum (SHA-256): ${checksum}`,
+      properties: { checksum, vault_version: '2.0' }
+    };
+
+    const initiateRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': 'text/plain',
+        'X-Upload-Content-Length': buffer.length.toString()
       },
       body: JSON.stringify(metadata)
     });
 
-    if (!createRes.ok) {
-      const errorText = await createRes.text();
-      throw new Error(`Google Drive létrehozási hiba (${createRes.status}): ${errorText}`);
-    }
+    if (!initiateRes.ok) throw new Error(`Létrehozási hiba: ${initiateRes.status}`);
+    const uploadUrl = initiateRes.headers.get('Location');
+    if (!uploadUrl) throw new Error('Nem kaptam feltöltési URL-t');
 
-    const createdFile = await createRes.json() as any;
-
-    // 3. LÉPÉS: A tartalom (a titkosított hex/base64 adat) feltöltése
-    const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${createdFile.id}?uploadType=media`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'text/plain'
-      },
-      body: dataB64
+    // 4. Upload Data
+    const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Length': buffer.length.toString() },
+        body: buffer
     });
 
-    if (!uploadRes.ok) {
-      const errorText = await uploadRes.text();
-      throw new Error(`Google Drive feltöltési hiba (${uploadRes.status}): ${errorText}`);
-    }
+    if (!uploadRes.ok) throw new Error(`Feltöltési hiba: ${uploadRes.status}`);
+    const fileInfo = await uploadRes.json() as any;
 
-    return createdFile.id;
+    // 5. Get WebViewLink
+    const getLinkRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileInfo.id}?fields=webViewLink`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const linkData = await getLinkRes.json() as any;
+
+    // 6. Retention Policy: Cleanup old backups (> 30 days)
+    try {
+        const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folder_id || 'root'}' in parents and trashed = false&fields=files(id, name, createdTime)`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const listData = await listRes.json() as any;
+        if (listData.files) {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            for (const file of listData.files) {
+                if (new Date(file.createdTime) < thirtyDaysAgo && file.name.startsWith('backup-')) {
+                    console.log(`🗑️ Cleaning up old Drive backup: ${file.name}`);
+                    await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    });
+                }
+            }
+        }
+    } catch (e) { console.error('Retention cleanup failed:', e); }
+
+    return { id: fileInfo.id, webViewLink: linkData.webViewLink, checksum };
   }
 
   adminRouter.post('/backups/vault-upload/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
-      if (!backup.length) return res.status(404).json({ error: 'Mentés nem található' });
+      const backupRows = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
+      if (!backupRows.length) return res.status(404).json({ error: 'Mentés nem található' });
 
-      console.log(`🚀 Vault: Uploading ${backup[0].filename} to Google Drive...`);
-      const driveId = await uploadToGoogleDrive(backup[0].filename, backup[0].data);
+      // Set initial uploading status so UI can react
+      let initialMetadata = backupRows[0].metadata || {};
+      if (typeof initialMetadata === 'string') try { initialMetadata = JSON.parse(initialMetadata); } catch(e) {}
       
-      const user = (req as any).user;
-
-      // JAVÍTÁS: Ellenőrizzük, hogy a metadata már eleve objektum-e (mert a Postgres automatikusan átalakítja)
-      let currentMetadata = backup[0].metadata || {};
-      if (typeof currentMetadata === 'string') {
-        try { currentMetadata = JSON.parse(currentMetadata); } catch(e) {}
-      }
-
       await runExec(pool, 'UPDATE backups SET metadata = ? WHERE id = ?', [
-        JSON.stringify({ ...currentMetadata, googleDriveId: driveId, uploadedAt: new Date().toISOString() }),
+        JSON.stringify({ ...initialMetadata, vaultStatus: 'uploading', vaultStartedAt: new Date().toISOString() }),
         id
       ]);
 
-      await logActivity(user.uid, 'Vault Upload', `Backup ${backup[0].filename} feltöltve a Google Drive-ra (ID: ${driveId})`, req);
-      res.json({ success: true, driveId });
+      // Return immediately for UI responsiveness
+      res.json({ success: true, message: 'Feltöltés elindítva a háttérben.' });
+
+      // Process in background
+      (async () => {
+        try {
+          console.log(`🚀 Vault: Background uploading ${backupRows[0].filename}...`);
+          const uploadResult = await uploadToGoogleDrive(backupRows[0].filename, backupRows[0].data);
+          
+          // Re-fetch to ensure we have the latest metadata before updating
+          const currentRows = await runQuery(pool, 'SELECT metadata FROM backups WHERE id = ?', [id]);
+          let updatedMetadata = currentRows[0].metadata || {};
+          if (typeof updatedMetadata === 'string') try { updatedMetadata = JSON.parse(updatedMetadata); } catch(e) {}
+
+          await runExec(pool, 'UPDATE backups SET metadata = ? WHERE id = ?', [
+            JSON.stringify({ 
+                ...updatedMetadata, 
+                googleDriveId: uploadResult.id, 
+                googleDriveLink: uploadResult.webViewLink,
+                checksum: uploadResult.checksum,
+                uploadedAt: new Date().toISOString(),
+                vaultStatus: 'completed'
+            }),
+            id
+          ]);
+
+          const user = (req as any).user;
+          await logActivity(user.uid, 'Vault Upload', `Backup ${backupRows[0].filename} feltöltve (ID: ${uploadResult.id})`, req);
+          await createNotification(pool, user.uid, 'success', 'Vault Szinkronizáció', `✅ Mentés sikeresen archiválva a Drive-on: ${backupRows[0].filename}`);
+        } catch (error) {
+          console.error('Background Vault Upload failed:', error);
+          try {
+            const currentRows = await runQuery(pool, 'SELECT metadata FROM backups WHERE id = ?', [id]);
+            let updatedMetadata = currentRows[0].metadata || {};
+            if (typeof updatedMetadata === 'string') try { updatedMetadata = JSON.parse(updatedMetadata); } catch(e) {}
+            
+            await runExec(pool, 'UPDATE backups SET metadata = ? WHERE id = ?', [
+              JSON.stringify({ ...updatedMetadata, vaultStatus: 'failed', lastError: (error as Error).message }),
+              id
+            ]);
+          } catch(e) { console.error('Failed to set failed status:', e); }
+
+          const user = (req as any).user;
+          await createNotification(pool, user.uid, 'error', 'Vault Hiba', `❌ Mentés feltöltése sikertelen: ${(error as Error).message}`);
+        }
+      })();
+
     } catch (error) {
-      console.error('Vault Upload failed:', error);
+      console.error('Vault Upload initiation failed:', error);
       res.status(500).json({ error: (error as Error).message });
     }
   });
@@ -2331,10 +2417,32 @@ async function startServer() {
 
   // Schedule daily backup at 3 AM
   cron.schedule('0 3 * * *', async () => {
-    console.log('Running scheduled daily backup...');
+    console.log('Running scheduled daily backup and vault sync...');
     try {
-      await createBackup('auto');
-      console.log('Scheduled backup successful');
+      const backup = await createBackup('auto');
+      console.log(`Scheduled backup successful: ${backup.filename}. Syncing to vault...`);
+      
+      // Auto-upload to Google Drive
+      try {
+        const uploadResult = await uploadToGoogleDrive(backup.filename, backup.data);
+        let currentMetadata = backup.metadata || {};
+        if (typeof currentMetadata === 'string') try { currentMetadata = JSON.parse(currentMetadata); } catch(e) {}
+
+        await runExec(pool, 'UPDATE backups SET metadata = ? WHERE id = ?', [
+          JSON.stringify({ 
+              ...currentMetadata, 
+              googleDriveId: uploadResult.id, 
+              googleDriveLink: uploadResult.webViewLink,
+              checksum: uploadResult.checksum,
+              uploadedAt: new Date().toISOString(),
+              vaultStatus: 'completed'
+          }),
+          backup.id
+        ]);
+        console.log('✅ Auto-vault sync successful');
+      } catch (vaultErr) {
+        console.error('❌ Auto-vault sync failed:', vaultErr);
+      }
     } catch (error) {
       console.error('Scheduled backup failed:', error);
     }

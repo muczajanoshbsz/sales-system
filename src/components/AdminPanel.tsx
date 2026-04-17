@@ -1009,17 +1009,29 @@ const AdminPanel: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={backup.type === 'auto' ? 'info' : backup.type === 'system' ? 'outline' : 'outline'} className="text-[10px] uppercase tracking-tighter">
-                        {backup.type === 'auto' ? 'Automatikus' : backup.type === 'system' ? 'Snapshot' : 'Manuális'}
-                      </Badge>
-                      {safeParseMetadata(backup.metadata).googleDriveId && (
-                        <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title="Feltöltve a Vaultba">
-                          <Cloud className="w-3 h-3" />
-                          <span className="text-[8px] font-black uppercase">Vault</span>
-                        </div>
-                      )}
-                    </div>
+                      {(() => {
+                        const meta = safeParseMetadata(backup.metadata);
+                        const isUploaded = meta.googleDriveId || meta.vaultStatus === 'completed';
+                        const link = meta.googleDriveLink;
+                        const checksum = meta.checksum;
+                        
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant={backup.type === 'auto' ? 'info' : backup.type === 'system' ? 'outline' : 'outline'} className="text-[10px] uppercase tracking-tighter">
+                                {backup.type === 'auto' ? 'Automatikus' : backup.type === 'system' ? 'Snapshot' : 'Manuális'}
+                              </Badge>
+                              {isUploaded && (
+                                <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title={`Checksum: ${checksum || 'N/A'}`}>
+                                  <Cloud className="w-3 h-3" />
+                                  <span className="text-[8px] font-black uppercase">Vault</span>
+                                </div>
+                              )}
+                            </div>
+                            {checksum && <span className="text-[8px] text-slate-400 font-mono truncate max-w-[120px]" title={`SHA-256: ${checksum}`}>SHA: {checksum.substring(0, 12)}...</span>}
+                          </div>
+                        );
+                      })()}
                   </td>
                   <td className="px-6 py-4 text-sm font-mono text-slate-500">
                     {(backup.size / 1024).toFixed(2)} KB
@@ -1041,46 +1053,85 @@ const AdminPanel: React.FC = () => {
                         </Button>
                       )}
                       
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="text-emerald-600 hover:bg-emerald-50"
-                        onClick={async () => {
-                          try {
-                            if (backup.type === 'system') {
-                              await apiService.downloadSystemArtifact(backup.id, backup.filename);
-                            } else {
-                              await apiService.downloadBackup(backup.id);
-                            }
-                          } catch (error) {
-                            alert('Letöltés sikertelen: ' + (error as Error).message);
-                          }
-                        }}
-                        title="Letöltés"
-                      >
-                        <Download className="w-4 h-4" />
-                      </Button>
-
-                      {backup.type === 'system' && (Array.isArray(configs) ? configs : []).some(c => c.key === 'GOOGLE_DRIVE_CONFIG') && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                          title="Feltöltés a Vaultba (Google Drive)"
+                      {backup.type === 'system' && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-emerald-600 hover:bg-emerald-50"
                           onClick={async () => {
                             try {
-                              showToast('Feltöltés a Vaultba folyamatban...', 'info');
-                              await apiService.uploadToVault(backup.id);
-                              showToast('Artifact sikeresen mentve a Vaultba!', 'success');
-                              fetchData();
-                            } catch (e) {
-                              showToast('Vault feltöltés sikertelen', 'error');
+                              await apiService.downloadSystemArtifact(backup.id, backup.filename);
+                            } catch (error) {
+                              alert('Letöltés sikertelen: ' + (error as Error).message);
                             }
                           }}
+                          title="Fizikai Letöltés"
                         >
-                          <Cloud className="w-4 h-4" />
+                          <Download className="w-4 h-4" />
                         </Button>
                       )}
+
+                      {backup.type !== 'system' && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-emerald-600 hover:bg-emerald-50"
+                          onClick={async () => {
+                            try {
+                              await apiService.downloadBackup(backup.id);
+                            } catch (error) {
+                              alert('Letöltés sikertelen: ' + (error as Error).message);
+                            }
+                          }}
+                          title="JSON Letöltés"
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      )}
+
+                      {(() => {
+                        const meta = safeParseMetadata(backup.metadata);
+                        const isUploaded = meta.googleDriveId || meta.vaultStatus === 'completed';
+                        const link = meta.googleDriveLink;
+                        
+                        return (
+                          <div className="flex gap-1">
+                             {!isUploaded ? (
+                               <Button
+                                 variant="ghost"
+                                 size="sm"
+                                 className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                 title="Manuális szinkronizálás a Vaultba (Drive)"
+                                 onClick={async () => {
+                                   try {
+                                     showToast('Szinkronizálás elindítva...', 'info');
+                                     await apiService.uploadToVault(backup.id);
+                                     showToast('Feltöltés a háttérben fut. Értesítést kapsz, ha kész.', 'success');
+                                     // Poll or update UI status
+                                     setTimeout(fetchData, 2000);
+                                   } catch (e) {
+                                     showToast('Vault hiba: ' + (e as Error).message, 'error');
+                                   }
+                                 }}
+                               >
+                                 <Cloud className="w-4 h-4" />
+                               </Button>
+                             ) : (
+                               link && (
+                                 <Button
+                                   variant="ghost"
+                                   size="sm"
+                                   className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                   title="Megnyitás Google Drive-on"
+                                   onClick={() => window.open(link, '_blank')}
+                                 >
+                                   <ExternalLink className="w-4 h-4" />
+                                 </Button>
+                               )
+                             )}
+                          </div>
+                        );
+                      })()}
 
                       {backup.type !== 'system' && (
                         <Button 
