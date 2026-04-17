@@ -12,6 +12,8 @@ import * as XLSX from 'xlsx';
 import nodemailer from 'nodemailer';
 import { jsPDF } from 'jspdf';
 import { GoogleGenAI } from "@google/genai";
+import AdmZip from 'adm-zip';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
@@ -457,6 +459,12 @@ async function startServer() {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS system_config (
+          key VARCHAR(255) PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
         CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications ("userId");
         CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications (is_read);
         CREATE INDEX IF NOT EXISTS idx_weekly_reports_user_id ON weekly_reports ("userId");
@@ -846,7 +854,13 @@ async function startServer() {
     return reportJson;
   }
 
-  const logActivity = async (userId: string, action: string, details: string, req?: express.Request) => {
+  const logActivity = async (userId: string | any, action: string, details: string, req?: express.Request) => {
+    let finalUserId = userId;
+    // Safety check: if an object (like req) was mistakenly passed, try to extract a string ID
+    if (typeof userId !== 'string' && userId !== null && userId !== undefined) {
+      finalUserId = userId?.user?.uid || userId?.uid || 'system';
+    }
+    
     let finalDetails = details;
     const user = req ? (req as any).user : null;
     
@@ -856,7 +870,7 @@ async function startServer() {
 
     try {
       await runExec(pool, 'INSERT INTO audit_logs ("userId", action, details) VALUES (?, ?, ?)', [
-        userId,
+        finalUserId,
         action,
         finalDetails,
       ]);
@@ -1687,6 +1701,72 @@ async function startServer() {
 
   // --- Backup & Recovery Logic ---
 
+  // Create a system artifact (Code + DB)
+  async function createSystemArtifact(createdBy: string) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `system-artifact-${timestamp}.zip.enc`;
+    const filePath = path.join(BACKUP_DIR, filename);
+
+    console.log('📦 Starting system artifact generation...');
+
+    // 1. Create DB Snapshot
+    const tables = ['product_models', 'stock', 'sales', 'pending_sales', 'market_prices', 'audit_logs', 'users', 'weekly_reports', 'backups', 'notifications'];
+    const dbSnapshot: Record<string, any> = {};
+    for (const table of tables) {
+      try {
+        dbSnapshot[table] = await runQuery(pool, `SELECT * FROM "${table}"`);
+      } catch (e) {
+        console.warn(`Failed to snapshot table ${table}:`, e);
+      }
+    }
+
+    // 2. Prepare Zip
+    const zip = new AdmZip();
+    zip.addFile('database_snapshot.json', Buffer.from(JSON.stringify(dbSnapshot), 'utf8'));
+    
+    // Add source code (excluding bulky folders)
+    const excludePaths = ['node_modules', 'dist', 'backups', '.git', '.next', '.cache', '.env'];
+    const rootFiles = fs.readdirSync(process.cwd());
+    for (const file of rootFiles) {
+      if (excludePaths.includes(file)) continue;
+      
+      const fullPath = path.join(process.cwd(), file);
+      try {
+        const stats = fs.lstatSync(fullPath);
+        if (stats.isDirectory()) {
+           zip.addLocalFolder(fullPath, file);
+        } else if (stats.isFile()) {
+           zip.addLocalFile(fullPath);
+        }
+      } catch (e) {
+        console.warn(`Skipping ${file} due to error:`, e);
+      }
+    }
+
+    const zipBuffer = zip.toBuffer();
+    console.log(`📦 Zip created (${(zipBuffer.length / 1024 / 1024).toFixed(2)} MB). Encrypting...`);
+    
+    const encryptedData = encrypt(zipBuffer.toString('base64'));
+    
+    // Store in DB
+    const result = await runQuery(pool, `
+      INSERT INTO backups (filename, size, type, format, created_by, metadata, data)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      RETURNING *
+    `, [
+      filename,
+      Buffer.byteLength(encryptedData),
+      'system',
+      'enc_zip',
+      createdBy,
+      JSON.stringify({ isSystemArtifact: true, tableCount: tables.length }),
+      encryptedData
+    ]);
+
+    console.log('✅ System artifact generated and stored in database.');
+    return result[0];
+  }
+
   // Create a backup
   async function createBackup(type: 'auto' | 'manual', createdBy?: string) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1938,8 +2018,159 @@ async function startServer() {
     try {
       const user = (req as any).user;
       const backup = await createBackup('manual', user.email);
-      await logActivity(req as any, 'Backup created', `Manual backup created: ${backup.filename}`);
+      await logActivity(user.uid, 'Backup created', `Manual backup created: ${backup.filename}`, req);
       res.json(backup);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.post('/backups/system-artifact', async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const artifact = await createSystemArtifact(user.email);
+      await logActivity(user.uid, 'System Artifact created', `Professional system snapshot created: ${artifact.filename}`, req);
+      res.json(artifact);
+    } catch (error) {
+      console.error('Artifact generation failed:', error);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.get('/backups/download-artifact/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
+      if (!backup.length || backup[0].format !== 'enc_zip') {
+        return res.status(404).json({ error: 'Artifact not found' });
+      }
+
+      const decryptedBase64 = decrypt(backup[0].data);
+      const zipBuffer = Buffer.from(decryptedBase64, 'base64');
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="${backup[0].filename.replace('.enc', '')}"`);
+      res.send(zipBuffer);
+    } catch (error) {
+      console.error('Artifact download failed:', error);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  // Google Drive Vault Upload (OAuth 2.0 - .env alapú, ingyenes verzió)
+  async function uploadToGoogleDrive(filename: string, dataB64: string) {
+    // Adatok kinyerése a környezeti változókból
+    const client_id = process.env.GOOGLE_DRIVE_CLIENT_ID;
+    const client_secret = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
+    const refresh_token = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+    const folder_id = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    if (!client_id || !client_secret || !refresh_token) {
+      throw new Error('Hiányzó Google Drive beállítások az .env fájlban!');
+    }
+
+    // 1. Hitelesítés: Új Access Token kérése a Refresh Token segítségével
+    const authRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `client_id=${client_id}&client_secret=${client_secret}&refresh_token=${refresh_token}&grant_type=refresh_token`
+    });
+    
+    const authData = await authRes.json() as any;
+    if (!authData.access_token) {
+      throw new Error('Google OAuth hiba: ' + (authData.error_description || authData.error || 'Ismeretlen hiba'));
+    }
+    
+    const accessToken = authData.access_token;
+
+    // 2. LÉPÉS: A fájl metaadatainak létrehozása (Név és Mappa)
+    const metadata = { name: filename, parents: folder_id ? [folder_id] : [] };
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(metadata)
+    });
+
+    if (!createRes.ok) {
+      const errorText = await createRes.text();
+      throw new Error(`Google Drive létrehozási hiba (${createRes.status}): ${errorText}`);
+    }
+
+    const createdFile = await createRes.json() as any;
+
+    // 3. LÉPÉS: A tartalom (a titkosított hex/base64 adat) feltöltése
+    const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${createdFile.id}?uploadType=media`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'text/plain'
+      },
+      body: dataB64
+    });
+
+    if (!uploadRes.ok) {
+      const errorText = await uploadRes.text();
+      throw new Error(`Google Drive feltöltési hiba (${uploadRes.status}): ${errorText}`);
+    }
+
+    return createdFile.id;
+  }
+
+  adminRouter.post('/backups/vault-upload/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
+      if (!backup.length) return res.status(404).json({ error: 'Mentés nem található' });
+
+      console.log(`🚀 Vault: Uploading ${backup[0].filename} to Google Drive...`);
+      const driveId = await uploadToGoogleDrive(backup[0].filename, backup[0].data);
+      
+      const user = (req as any).user;
+
+      // JAVÍTÁS: Ellenőrizzük, hogy a metadata már eleve objektum-e (mert a Postgres automatikusan átalakítja)
+      let currentMetadata = backup[0].metadata || {};
+      if (typeof currentMetadata === 'string') {
+        try { currentMetadata = JSON.parse(currentMetadata); } catch(e) {}
+      }
+
+      await runExec(pool, 'UPDATE backups SET metadata = ? WHERE id = ?', [
+        JSON.stringify({ ...currentMetadata, googleDriveId: driveId, uploadedAt: new Date().toISOString() }),
+        id
+      ]);
+
+      await logActivity(user.uid, 'Vault Upload', `Backup ${backup[0].filename} feltöltve a Google Drive-ra (ID: ${driveId})`, req);
+      res.json({ success: true, driveId });
+    } catch (error) {
+      console.error('Vault Upload failed:', error);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.get('/system-config', async (req, res) => {
+    try {
+      const configs = await runQuery(pool, 'SELECT key, updated_at FROM system_config');
+      res.json(configs);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.post('/system-config', async (req, res) => {
+    try {
+      const { key, value } = req.body;
+      if (!key || value === undefined) return res.status(400).json({ error: 'Missing key or value' });
+      
+      const encryptedValue = encrypt(value);
+      await runExec(pool, `
+        INSERT INTO system_config (key, value, updated_at)
+        VALUES (?, ?, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+      `, [key, encryptedValue]);
+      
+      res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
@@ -2020,7 +2251,8 @@ async function startServer() {
       }
 
       await client.query('COMMIT');
-      await logActivity(req as any, 'System Restored', `System restored from backup: ${backup[0].filename}`);
+      const user = (req as any).user;
+      await logActivity(user.uid, 'System Restored', `System restored from backup: ${backup[0].filename}`, req);
       res.json({ success: true });
     } catch (error) {
       await client.query('ROLLBACK');

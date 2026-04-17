@@ -472,6 +472,62 @@ export const apiService = {
     }
   },
 
+  async createSystemArtifact(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/backups/system-artifact`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async downloadSystemArtifact(id: number, filename: string = 'system-artifact.zip.enc'): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE}/admin/backups/download-artifact/${id}`, {
+        headers: getHeaders(),
+      });
+      await handleResponse(response);
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Artifact download failed:', error);
+      throw error;
+    }
+  },
+
+  async uploadToVault(id: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/backups/vault-upload/${id}`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+  },
+
+  async getSystemConfigs(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/system-config`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async updateSystemConfig(key: string, value: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/system-config`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ key, value }),
+    });
+    await handleResponse(response);
+  },
+
   async exportData(format: 'json' | 'xlsx'): Promise<void> {
     const response = await fetch(`${API_BASE}/admin/export/${format}`, {
       headers: getHeaders(),

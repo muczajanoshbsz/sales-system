@@ -38,18 +38,27 @@ import {
   AlertTriangle,
   RefreshCw,
   Stethoscope,
+  Trash,
+  Settings,
+  Archive,
+  Lock,
+  Cloud,
+  FileText,
   Send,
+  Award,
+  PieChart,
+  ChevronRight,
   Bot,
   Sparkles,
   MessageSquare,
-  FileText,
-  PieChart,
   TrendingUp as TrendingUpIcon,
-  Award
+  Info
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Card, Button, Badge, LoadingSpinner } from './ui/Base';
+import { Modal } from './ui/Modal';
 import { useFirebase } from './FirebaseProvider';
+import { useToast } from './ToastContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, formatCurrency } from '../lib/utils';
 import { ProductModel } from '../types';
@@ -59,6 +68,7 @@ import { GhostModeModal } from './GhostModeModal';
 type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups' | 'diagnostics' | 'reports';
 
 const AdminPanel: React.FC = () => {
+  const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get('tab') as Tab) || 'stats';
   const setActiveTab = (tab: Tab) => setSearchParams({ tab });
@@ -85,6 +95,9 @@ const AdminPanel: React.FC = () => {
   const [userInsights, setUserInsights] = useState<any>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [ghostModalOpen, setGhostModalOpen] = useState(false);
+  const [vaultSetupOpen, setVaultSetupOpen] = useState(false);
+  const [vaultConfigInput, setVaultConfigInput] = useState('');
+  const [configs, setConfigs] = useState<any[]>([]);
   const [ghostTarget, setGhostTarget] = useState<any>(null);
   const { enterGhostMode, enterTimeTravel } = useFirebase();
 
@@ -154,8 +167,12 @@ const AdminPanel: React.FC = () => {
           setCatalogModels(catalogData);
           break;
         case 'backups':
-          const backupsData = await apiService.getBackups();
+          const [backupsData, configsData] = await Promise.all([
+            apiService.getBackups(),
+            apiService.getSystemConfigs()
+          ]);
           setBackups(backupsData);
+          setConfigs(configsData);
           break;
         case 'reports':
           const reportData = await apiService.getWeeklyReport();
@@ -186,7 +203,7 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'stock') return stock.filter(s => s.model.toLowerCase().includes(term) || s.userEmail?.toLowerCase().includes(term));
     if (activeTab === 'logs') return logs.filter(l => l.action.toLowerCase().includes(term) || l.userEmail?.toLowerCase().includes(term));
     if (activeTab === 'catalog') return catalogModels.filter(m => m.name.toLowerCase().includes(term));
-    if (activeTab === 'backups') return backups.filter(b => b.filename.toLowerCase().includes(term) || b.created_by?.toLowerCase().includes(term));
+    if (activeTab === 'backups') return (Array.isArray(backups) ? backups : []).filter(b => b.filename.toLowerCase().includes(term) || (b.created_by || '').toLowerCase().includes(term));
     return [];
   };
 
@@ -787,6 +804,58 @@ const AdminPanel: React.FC = () => {
     </div>
   );
 
+  const safeParseMetadata = (metadata: string | null) => {
+    try {
+      return JSON.parse(metadata || '{}');
+    } catch (e) {
+      return {};
+    }
+  };
+
+  const renderVaultSetupModal = () => (
+    <Modal isOpen={vaultSetupOpen} onClose={() => setVaultSetupOpen(false)} title="Recovery Vault Konfigurálása">
+      <div className="space-y-6">
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 p-4 rounded-xl flex gap-3">
+          <Info className="w-5 h-5 text-amber-600 shrink-0" />
+          <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+            Hozzon létre egy <strong>Google Service Account</strong>-ot a Google Cloud Console-ban, 
+            majd töltse le a JSON kulcsot és másolja be ide a tartalmát. 
+            Szüksége lesz egy <strong>folder_id</strong>-ra is a JSON-ön belül, ahová a mentések kerülnek.
+          </p>
+        </div>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-black uppercase text-slate-500 mb-2 block tracking-widest">Service Account JSON (kiegészítve folder_id-val)</label>
+            <textarea
+              className="w-full h-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-[10px] font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+              placeholder='{ "type": "service_account", ..., "folder_id": "..." }'
+              value={vaultConfigInput}
+              onChange={(e) => setVaultConfigInput(e.target.value)}
+            />
+          </div>
+          
+          <Button 
+            className="w-full bg-indigo-600 hover:bg-indigo-700 h-12 rounded-xl font-bold shadow-lg shadow-indigo-200"
+            onClick={async () => {
+              try {
+                JSON.parse(vaultConfigInput);
+                await apiService.updateSystemConfig('GOOGLE_DRIVE_CONFIG', vaultConfigInput);
+                showToast('Vault konfiguráció sikeresen mentve!', 'success');
+                setVaultSetupOpen(false);
+                fetchData();
+              } catch (e) {
+                showToast('Érvénytelen JSON vagy mentési hiba', 'error');
+              }
+            }}
+          >
+            Vault Aktiválása
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+
   const renderBackups = () => (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -816,6 +885,41 @@ const AdminPanel: React.FC = () => {
           </Button>
         </Card>
 
+        <Card className="p-6 bg-slate-900 border-none text-white shadow-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
+            <ShieldCheck className="w-24 h-24" />
+          </div>
+          <div className="flex items-center gap-4 mb-4 relative z-10">
+            <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
+              <Archive className="w-6 h-6 text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black tracking-tight text-white">System Artifact</h3>
+              <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Kód + Adatbázis Snapshot</p>
+            </div>
+          </div>
+          <Button 
+            className="w-full gap-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold h-12 rounded-xl relative z-10"
+            onClick={async () => {
+              if (confirm('Ez egy teljes rendszer-pillanatképet készít (Kód + Adatbázis) és titkosítja azt. Biztosan elindítod?')) {
+                try {
+                  showToast('Rendszer snapshot generálása elindult...', 'info');
+                  await apiService.createSystemArtifact();
+                  showToast('Rendszer snapshot sikeresen elkészült!', 'success');
+                  fetchData();
+                } catch (error) {
+                  showToast('Hiba történt a generálás során', 'error');
+                }
+              }
+            }}
+          >
+            <Lock className="w-4 h-4" />
+            Snapshot Generálása
+          </Button>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="p-6 bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30">
           <div className="flex items-center gap-4 mb-4">
             <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
@@ -826,34 +930,51 @@ const AdminPanel: React.FC = () => {
               <p className="text-xs text-slate-500">Excel formátumú letöltés</p>
             </div>
           </div>
-          <Button 
-            variant="outline"
-            className="w-full gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-            onClick={() => apiService.exportData('xlsx')}
-          >
-            <Download className="w-4 h-4" />
-            XLSX Letöltése
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline"
+              className="flex-1 gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 h-11"
+              onClick={() => apiService.exportData('xlsx')}
+            >
+              <Download className="w-4 h-4" />
+              XLSX
+            </Button>
+            <Button 
+              variant="outline"
+              className="flex-1 gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 h-11"
+              onClick={() => apiService.exportData('json')}
+            >
+              <FileJson className="w-4 h-4" />
+              JSON
+            </Button>
+          </div>
         </Card>
 
         <Card className="p-6 bg-amber-50/50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/30">
           <div className="flex items-center gap-4 mb-4">
             <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-              <FileJson className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+              <Cloud className="w-6 h-6 text-amber-600 dark:text-amber-400" />
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">JSON Export</h3>
-              <p className="text-xs text-slate-500">Fejlesztői adatmentés</p>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">Recovery Vault</h3>
+              <p className="text-xs text-slate-500">Google Drive Automata Mentés</p>
             </div>
           </div>
-          <Button 
-            variant="outline"
-            className="w-full gap-2 border-amber-200 text-amber-700 hover:bg-emerald-50"
-            onClick={() => apiService.exportData('json')}
-          >
-            <Download className="w-4 h-4" />
-            JSON Letöltése
-          </Button>
+          <div className="flex flex-col gap-2">
+            <div className={`text-[10px] ${(Array.isArray(configs) ? configs : []).some(c => c.key === 'GOOGLE_DRIVE_CONFIG') ? 'bg-emerald-200/50 text-emerald-800' : 'bg-amber-200/50 text-amber-800'} dark:bg-amber-900/30 p-2 rounded-lg font-bold text-center`}>
+              {(Array.isArray(configs) ? configs : []).some(c => c.key === 'GOOGLE_DRIVE_CONFIG') 
+                ? '✅ VAULT AKTÍV: Google Drive csatlakozva.' 
+                : '⚠️ SETUP SZÜKSÉGES: Csatlakoztasd a Google Service Accountot.'}
+            </div>
+            <Button 
+              variant="outline"
+              className="w-full gap-2 border-amber-200 text-amber-700 hover:bg-amber-50 h-11"
+              onClick={() => setVaultSetupOpen(true)}
+            >
+              <Settings className="w-4 h-4" />
+              Konfigurálás
+            </Button>
+          </div>
         </Card>
       </div>
 
@@ -877,7 +998,7 @@ const AdminPanel: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {backups.map((backup) => (
+              {Array.isArray(backups) && backups.map((backup) => (
                 <tr key={backup.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
@@ -888,9 +1009,17 @@ const AdminPanel: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <Badge variant={backup.type === 'auto' ? 'info' : 'outline'} className="text-[10px] uppercase tracking-tighter">
-                      {backup.type === 'auto' ? 'Automatikus' : 'Manuális'}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={backup.type === 'auto' ? 'info' : backup.type === 'system' ? 'outline' : 'outline'} className="text-[10px] uppercase tracking-tighter">
+                        {backup.type === 'auto' ? 'Automatikus' : backup.type === 'system' ? 'Snapshot' : 'Manuális'}
+                      </Badge>
+                      {safeParseMetadata(backup.metadata).googleDriveId && (
+                        <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title="Feltöltve a Vaultba">
+                          <Cloud className="w-3 h-3" />
+                          <span className="text-[8px] font-black uppercase">Vault</span>
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-sm font-mono text-slate-500">
                     {(backup.size / 1024).toFixed(2)} KB
@@ -900,22 +1029,29 @@ const AdminPanel: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="text-indigo-600 hover:bg-indigo-50"
-                        onClick={() => enterTimeTravel(backup.id.toString(), backup.created_at)}
-                        title="Time Travel (Betekintés)"
-                      >
-                        <Clock className="w-4 h-4" />
-                      </Button>
+                      {backup.type !== 'system' && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-indigo-600 hover:bg-indigo-50"
+                          onClick={() => enterTimeTravel(backup.id.toString(), backup.created_at)}
+                          title="Time Travel (Betekintés)"
+                        >
+                          <Clock className="w-4 h-4" />
+                        </Button>
+                      )}
+                      
                       <Button 
                         variant="ghost" 
                         size="sm" 
                         className="text-emerald-600 hover:bg-emerald-50"
                         onClick={async () => {
                           try {
-                            await apiService.downloadBackup(backup.id);
+                            if (backup.type === 'system') {
+                              await apiService.downloadSystemArtifact(backup.id, backup.filename);
+                            } else {
+                              await apiService.downloadBackup(backup.id);
+                            }
                           } catch (error) {
                             alert('Letöltés sikertelen: ' + (error as Error).message);
                           }
@@ -924,30 +1060,54 @@ const AdminPanel: React.FC = () => {
                       >
                         <Download className="w-4 h-4" />
                       </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="text-red-600 hover:bg-red-50"
-                        onClick={async () => {
-                          if (confirm('FIGYELEM! A rendszer visszaállítása felülírja a jelenlegi adatokat. Biztosan folytatod?')) {
+
+                      {backup.type === 'system' && (Array.isArray(configs) ? configs : []).some(c => c.key === 'GOOGLE_DRIVE_CONFIG') && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                          title="Feltöltés a Vaultba (Google Drive)"
+                          onClick={async () => {
                             try {
-                              await apiService.restoreBackup(backup.id);
-                              alert('Rendszer sikeresen visszaállítva');
-                              window.location.reload();
-                            } catch (error) {
-                              alert('Visszaállítás sikertelen');
+                              showToast('Feltöltés a Vaultba folyamatban...', 'info');
+                              await apiService.uploadToVault(backup.id);
+                              showToast('Artifact sikeresen mentve a Vaultba!', 'success');
+                              fetchData();
+                            } catch (e) {
+                              showToast('Vault feltöltés sikertelen', 'error');
                             }
-                          }
-                        }}
-                        title="Visszaállítás"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                      </Button>
+                          }}
+                        >
+                          <Cloud className="w-4 h-4" />
+                        </Button>
+                      )}
+
+                      {backup.type !== 'system' && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-red-600 hover:bg-red-50"
+                          onClick={async () => {
+                            if (confirm('FIGYELEM! A rendszer visszaállítása felülírja a jelenlegi adatokat. Biztosan folytatod?')) {
+                              try {
+                                await apiService.restoreBackup(backup.id);
+                                alert('Rendszer sikeresen visszaállítva');
+                                window.location.reload();
+                              } catch (error) {
+                                alert('Visszaállítás sikertelen');
+                              }
+                            }
+                          }}
+                          title="Visszaállítás"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
-              {backups.length === 0 && (
+              {(Array.isArray(backups) ? backups : []).length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
                     Még nem készült biztonsági mentés.
@@ -1497,6 +1657,7 @@ const AdminPanel: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+      {renderVaultSetupModal()}
     </div>
   );
 };
