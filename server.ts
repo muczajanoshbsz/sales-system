@@ -745,6 +745,66 @@ async function startServer() {
     }
   }
 
+  async function sendSystemEmail(subject: string, title: string, content: string, details?: any) {
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = Number(process.env.SMTP_PORT) || 587;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    const smtpFrom = process.env.SMTP_FROM || smtpUser;
+    const receiverEmail = process.env.REPORT_RECEIVER_EMAIL;
+
+    if (!smtpHost || !smtpUser || !smtpPass || !receiverEmail) {
+      console.warn('⚠️ SMTP not fully configured. Skipping system email.');
+      return;
+    }
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      let detailsHtml = '';
+      if (details) {
+        detailsHtml = `<div style="margin-top: 20px; padding: 15px; background: #f1f5f9; border-radius: 8px; font-family: monospace; font-size: 12px; color: #475569; overflow: auto;">
+          ${JSON.stringify(details, null, 2).replace(/\n/g, '<br>').replace(/\s/g, '&nbsp;')}
+        </div>`;
+      }
+
+      await transporter.sendMail({
+        from: `"AirPods Vault" <${smtpFrom}>`,
+        to: receiverEmail,
+        subject: `[VAULT-ALERT] ${subject}`,
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; color: #334155; background-color: #f8fafc; border-radius: 24px; border: 1px solid #e2e8f0;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #4f46e5; margin: 0; font-size: 24px; font-weight: 800;">AirPods Vault</h1>
+              <p style="color: #94a3b8; font-size: 12px; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.1em;">System Health Monitor</p>
+            </div>
+            
+            <div style="background-color: white; border-radius: 20px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+              <h2 style="color: #0f172a; font-size: 18px; margin-top: 0; margin-bottom: 12px;">${title}</h2>
+              <div style="line-height: 1.6; font-size: 14px;">${content}</div>
+              ${detailsHtml}
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8;">
+                Időpont: ${new Date().toLocaleString('hu-HU')}<br>
+                Szerver: ${os.hostname()}
+              </div>
+            </div>
+          </div>
+        `,
+      });
+      console.log('✅ System alert email sent:', subject);
+    } catch (error) {
+      console.error('❌ Failed to send system email:', error);
+    }
+  }
+
   async function generateAndSendReport(daysBefore: number = 14) {
     console.log(`Generating report for the last ${daysBefore} days...`);
     const apiKey = process.env.GEMINI_API_KEY;
@@ -2257,6 +2317,16 @@ async function startServer() {
     }
   });
 
+  adminRouter.post('/system/maintenance', async (req, res) => {
+    try {
+      const { testMode = false } = req.body;
+      const result = await runSystemMaintenance(testMode);
+      res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   adminRouter.get('/system-config', async (req, res) => {
     try {
       const configs = await runQuery(pool, 'SELECT key, updated_at FROM system_config');
@@ -2318,6 +2388,14 @@ async function startServer() {
   });
 
   adminRouter.post('/backups/restore/:id', async (req, res) => {
+    try {
+      // 1. SAFETY FIRST: Auto-Snapshot before restore
+      console.log('⚠️ SAFETY FIRST: Creating auto-snapshot before restore...');
+      await createSystemArtifact('system (auto-safety-pre-restore)');
+    } catch (e) {
+      console.error('Safety snapshot failed, but continuing restore...', e);
+    }
+
     const client = await pool.connect();
     try {
       const { id } = req.params;
@@ -2361,6 +2439,15 @@ async function startServer() {
       await client.query('COMMIT');
       const user = (req as any).user;
       await logActivity(user.uid, 'System Restored', `System restored from backup: ${backup[0].filename}`, req);
+      
+      // Notify admin via Email
+      await sendSystemEmail(
+        'Sikeres Visszaállítás',
+        '✅ Rendszer sikeresen visszaállítva',
+        `A rendszert sikeresen visszaállítottuk a következő mentésből: <b>${backup[0].filename}</b>.<br>A frissítő művelet előtt a biztonság kedvéért automatikus Snapshot mentés készült minden adatról és a szerver kódjáról is.`,
+        { backupId: backup[0].id, type: backup[0].type, restoredAt: new Date().toISOString() }
+      );
+
       res.json({ success: true });
     } catch (error) {
       await client.query('ROLLBACK');
@@ -2437,7 +2524,23 @@ async function startServer() {
     }
   });
 
-  // Schedule daily backup at 3 AM
+  // Schedule Midnight System Artifact (Kód + Adatbázis)
+  cron.schedule('0 0 * * *', async () => {
+    console.log('🌙 Running Midnight System Snapshot...');
+    try {
+      const artifact = await createSystemArtifact('system (auto-scheduled)');
+      await sendSystemEmail(
+        'Éjféli Rendszer Snapshot Sikeres',
+        '🌙 Éjféli Teljes Mentés Elkészült',
+        `A rendszer automatikusan elkészítette a teljes szerver-snapshotot (kód + adatbázis).`,
+        { filename: artifact.filename, size: `${(artifact.size / 1024 / 1024).toFixed(2)} MB`, date: artifact.created_at }
+      );
+    } catch (error) {
+      console.error('Midnight snapshot failed:', error);
+    }
+  });
+
+  // Schedule daily backup at 3 AM (Napi Adatok)
   cron.schedule('0 3 * * *', async () => {
     console.log('Running scheduled daily backup and vault sync...');
     try {
@@ -2445,8 +2548,14 @@ async function startServer() {
       console.log(`Scheduled backup successful: ${backup.filename}. Syncing to vault...`);
       
       // Auto-upload to Google Drive
+      let vaultStatus = 'failed';
+      let driveLink = null;
+
       try {
         const uploadResult = await uploadToGoogleDrive(backup.filename, backup.data);
+        vaultStatus = 'completed';
+        driveLink = uploadResult.webViewLink;
+
         let currentMetadata = backup.metadata || {};
         if (typeof currentMetadata === 'string') try { currentMetadata = JSON.parse(currentMetadata); } catch(e) {}
 
@@ -2454,7 +2563,7 @@ async function startServer() {
           JSON.stringify({ 
               ...currentMetadata, 
               googleDriveId: uploadResult.id, 
-              googleDriveLink: uploadResult.webViewLink,
+              googleDriveLink: driveLink,
               checksum: uploadResult.checksum,
               uploadedAt: new Date().toISOString(),
               vaultStatus: 'completed'
@@ -2465,8 +2574,21 @@ async function startServer() {
       } catch (vaultErr) {
         console.error('❌ Auto-vault sync failed:', vaultErr);
       }
+
+      // Notify via Email
+      await sendSystemEmail(
+        'Hajnali Mentés Sikeres',
+        '✅ Napi Adatmentés Elkészült',
+        `A napi adatbázis mentés sikeresen lefutott.<br><b>Vault Állapot:</b> ${vaultStatus === 'completed' ? '☁️ Szinkronizálva a Google Drive-ra' : '❌ Hiba a feltöltésnél!'}`,
+        { 
+          filename: backup.filename, 
+          size: `${(backup.size / 1024).toFixed(2)} KB`, 
+          googleDrive: driveLink || 'N/A'
+        }
+      );
     } catch (error) {
       console.error('Scheduled backup failed:', error);
+      await sendSystemEmail('KRITIKUS: Hajnali Mentés Sikertelen', '❌ HIBA A HAJNALI MENTÉSNÉL', `A rendszer nem tudta elkészíteni a mentést: ${(error as Error).message}`);
     }
   });
 
@@ -2481,6 +2603,86 @@ async function startServer() {
     }
   });
 
+  // PROFESSIONAL TIERED STORAGE CLEANUP
+  async function runSystemMaintenance(forceAll: boolean = false) {
+    console.log(`🧹 Starting Professional Tiered Storage Cleanup (Force: ${forceAll})...`);
+    try {
+      // 1. CLEANUP AUDIT LOGS (> 30 days)
+      const logsInterval = forceAll ? '0 days' : '30 days';
+      const deletedLogs = await runExec(pool, `DELETE FROM audit_logs WHERE timestamp < NOW() - INTERVAL '${logsInterval}'`);
+      console.log(`🗑️ Audit logs cleaned: ${deletedLogs.rowCount} rows removed.`);
+
+      // 2. OFFLOAD BACKUPS (> 7 days if they are on Drive)
+      const backupInterval = forceAll ? '0 days' : '7 days';
+      const oldBackups = await runQuery(pool, `
+        SELECT id, filename, metadata FROM backups 
+        WHERE created_at < NOW() - INTERVAL '${backupInterval}' 
+        AND data IS NOT NULL 
+        AND type != 'system'
+      `);
+
+      let offloadedBackups = 0;
+      for (const b of oldBackups) {
+        let meta = b.metadata || {};
+        if (typeof meta === 'string') try { meta = JSON.parse(meta); } catch(e) {}
+        
+        if (meta.googleDriveId || meta.vaultStatus === 'completed') {
+          console.log(`📦 Offloading old backup to Vault: ${b.filename}`);
+          await runExec(pool, 'UPDATE backups SET data = NULL, metadata = ? WHERE id = ?', [
+            JSON.stringify({ ...meta, isArchived: true, offloadedAt: new Date().toISOString() }),
+            b.id
+          ]);
+          offloadedBackups++;
+        }
+      }
+
+      // 3. OFFLOAD SNAPSHOTS (Keep last 2, offload > 14 days if on Drive)
+      const snapshotInterval = forceAll ? '0 days' : '14 days';
+      const oldSnapshots = await runQuery(pool, `
+        SELECT id, filename, metadata FROM backups 
+        WHERE created_at < NOW() - INTERVAL '${snapshotInterval}' 
+        AND data IS NOT NULL 
+        AND type = 'system'
+        ORDER BY created_at DESC
+        OFFSET 2
+      `);
+
+      let offloadedSnapshots = 0;
+      for (const s of oldSnapshots) {
+        let meta = s.metadata || {};
+        if (typeof meta === 'string') try { meta = JSON.parse(meta); } catch(e) {}
+        
+        if (meta.googleDriveId || meta.vaultStatus === 'completed') {
+          console.log(`🛸 Archiving old System Snapshot: ${s.filename}`);
+          await runExec(pool, 'UPDATE backups SET data = NULL, metadata = ? WHERE id = ?', [
+            JSON.stringify({ ...meta, isArchived: true, offloadedAt: new Date().toISOString() }),
+            s.id
+          ]);
+          offloadedSnapshots++;
+        }
+      }
+
+      console.log('✅ Tiered Storage Cleanup completed successfully.');
+      
+      await sendSystemEmail(
+        'Rendszerkarbantartás Sikeres',
+        '🧹 Karbantartási Jelentés',
+        `Az éjszakai karbantartás befejeződött.<br>Audit logok: <b>-${deletedLogs.rowCount}</b><br>Archivált mentések: <b>${offloadedBackups}</b><br>Archivált snapshotok: <b>${offloadedSnapshots}</b>`,
+        { logsRemoved: deletedLogs.rowCount, backupsOffloaded: offloadedBackups, snapshotsOffloaded: offloadedSnapshots }
+      );
+      
+      return { logsRemoved: deletedLogs.rowCount, backupsOffloaded: offloadedBackups, snapshotsOffloaded: offloadedSnapshots };
+    } catch (error) {
+      console.error('❌ Tiered Storage Cleanup failed:', error);
+      throw error;
+    }
+  }
+
+  // Runs every day at 4 AM (after the 3 AM backup)
+  cron.schedule('0 4 * * *', async () => {
+    await runSystemMaintenance(false);
+  });
+
   apiRouter.post('/admin/reports/test-send', checkAdmin, async (req, res) => {
     try {
       const result = await generateAndSendReport(14);
@@ -2493,6 +2695,14 @@ async function startServer() {
   apiRouter.post('/system/restore', async (req, res) => {
     const user = (req as any).user;
     if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+
+    try {
+      // 1. SAFETY FIRST: Auto-Snapshot before data restore
+      console.log('⚠️ SAFETY FIRST: Creating auto-snapshot before data restore...');
+      await createSystemArtifact('system (auto-safety-pre-restore)');
+    } catch (e) {
+      console.error('Safety snapshot failed, but continuing restore...', e);
+    }
 
     const client = await pool.connect();
 
@@ -2606,6 +2816,16 @@ async function startServer() {
       }
 
       await client.query('COMMIT');
+
+      // Notify admin via Email
+      const user = (req as any).user;
+      await sendSystemEmail(
+        'Sikeres Adat Visszaállítás',
+        '✅ Adatbázis sikeresen visszaállítva',
+        `A manuálisan feltöltött adatok sikeresen bekerültek az adatbázisba.<br>A frissítő művelet előtt a biztonság kedvéért automatikus Snapshot mentés készült minden adatról és a szerver kódjáról is.`,
+        { restoredBy: user.displayName || user.email, restoredAt: new Date().toISOString() }
+      );
+
       res.json({ success: true });
     } catch (error) {
       await client.query('ROLLBACK');

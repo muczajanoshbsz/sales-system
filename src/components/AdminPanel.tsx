@@ -106,7 +106,14 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'backups' || activeTab === 'stats') {
       checkDailyBackup();
     }
-  }, [activeTab]);
+
+    // Polling for background uploads if any backup is in 'uploading' state
+    let pollInterval: any;
+    if (activeTab === 'backups' && Array.isArray(backups) && backups.some(b => safeParseMetadata(b.metadata).vaultStatus === 'uploading')) {
+       pollInterval = setInterval(fetchData, 5000);
+    }
+    return () => { if (pollInterval) clearInterval(pollInterval); };
+  }, [activeTab, backups?.length]); // Added backups.length to re-trigger if list changes
 
   const checkDailyBackup = async () => {
     try {
@@ -804,7 +811,8 @@ const AdminPanel: React.FC = () => {
     </div>
   );
 
-  const safeParseMetadata = (metadata: string | null) => {
+  const safeParseMetadata = (metadata: any) => {
+    if (typeof metadata === 'object' && metadata !== null) return metadata;
     try {
       return JSON.parse(metadata || '{}');
     } catch (e) {
@@ -984,7 +992,29 @@ const AdminPanel: React.FC = () => {
             <History className="w-5 h-5 text-slate-400" />
             <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Mentési Előzmények</h3>
           </div>
-          <Badge variant="outline" className="text-[10px] uppercase tracking-widest">Utolsó 50 mentés</Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant="outline" className="text-[10px] uppercase tracking-widest">Utolsó 50 mentés</Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 text-[10px] font-bold uppercase"
+              onClick={async () => {
+                if (!confirm("Elindítod a rendszerkarbantartást? (Audit log takarítás és mentés archiválás)")) return;
+                try {
+                  showToast('Karbantartás folyamatban...', 'info');
+                  const response = await apiService.runMaintenance(true); // Always testMode=true for the user button for now to show immediate result
+                  const resData = response.result;
+                  showToast(`Kész! Logok: ${resData.logsRemoved}, Backups: ${resData.backupsOffloaded}, Snapshotok: ${resData.snapshotsOffloaded}`, 'success');
+                  fetchData();
+                } catch (e) {
+                  showToast('Hiba: ' + (e as Error).message, 'error');
+                }
+              }}
+            >
+              <Trash2 className="w-3 h-3" />
+              Karbantartás
+            </Button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -1012,6 +1042,8 @@ const AdminPanel: React.FC = () => {
                       {(() => {
                         const meta = safeParseMetadata(backup.metadata);
                         const isUploaded = meta.googleDriveId || meta.vaultStatus === 'completed';
+                        const isUploading = meta.vaultStatus === 'uploading';
+                        const isArchived = meta.isArchived === true;
                         const link = meta.googleDriveLink;
                         const checksum = meta.checksum;
                         
@@ -1024,7 +1056,13 @@ const AdminPanel: React.FC = () => {
                               {isUploaded && (
                                 <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title={`Checksum: ${checksum || 'N/A'}`}>
                                   <Cloud className="w-3 h-3" />
-                                  <span className="text-[8px] font-black uppercase">Vault</span>
+                                  <span className="text-[8px] font-black uppercase">{isArchived ? 'Archivált' : 'Vault'}</span>
+                                </div>
+                              )}
+                              {isUploading && (
+                                <div className="flex items-center gap-1 text-amber-500 animate-pulse">
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                  <span className="text-[8px] font-black uppercase">Szinkronizálás...</span>
                                 </div>
                               )}
                             </div>
@@ -1057,7 +1095,7 @@ const AdminPanel: React.FC = () => {
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          className="text-emerald-600 hover:bg-emerald-50"
+                          className={`${safeParseMetadata(backup.metadata).isArchived ? 'text-slate-300 pointer-events-none' : 'text-emerald-600 hover:bg-emerald-50'}`}
                           onClick={async () => {
                             try {
                               await apiService.downloadSystemArtifact(backup.id, backup.filename);
@@ -1065,7 +1103,8 @@ const AdminPanel: React.FC = () => {
                               alert('Letöltés sikertelen: ' + (error as Error).message);
                             }
                           }}
-                          title="Fizikai Letöltés"
+                          disabled={safeParseMetadata(backup.metadata).isArchived}
+                          title={safeParseMetadata(backup.metadata).isArchived ? "Archiválva: Használd a Drive linket" : "Fizikai Letöltés"}
                         >
                           <Download className="w-4 h-4" />
                         </Button>
@@ -1075,7 +1114,7 @@ const AdminPanel: React.FC = () => {
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          className="text-emerald-600 hover:bg-emerald-50"
+                          className={`${safeParseMetadata(backup.metadata).isArchived ? 'text-slate-300 pointer-events-none' : 'text-emerald-600 hover:bg-emerald-50'}`}
                           onClick={async () => {
                             try {
                               await apiService.downloadBackup(backup.id);
@@ -1083,7 +1122,8 @@ const AdminPanel: React.FC = () => {
                               alert('Letöltés sikertelen: ' + (error as Error).message);
                             }
                           }}
-                          title="JSON Letöltés"
+                          disabled={safeParseMetadata(backup.metadata).isArchived}
+                          title={safeParseMetadata(backup.metadata).isArchived ? "Archiválva: Használd a Drive linket" : "JSON Letöltés"}
                         >
                           <Download className="w-4 h-4" />
                         </Button>
@@ -1092,11 +1132,12 @@ const AdminPanel: React.FC = () => {
                       {(() => {
                         const meta = safeParseMetadata(backup.metadata);
                         const isUploaded = meta.googleDriveId || meta.vaultStatus === 'completed';
+                        const isUploading = meta.vaultStatus === 'uploading';
                         const link = meta.googleDriveLink;
                         
                         return (
                           <div className="flex gap-1">
-                             {!isUploaded ? (
+                             {!isUploaded && !isUploading ? (
                                <Button
                                  variant="ghost"
                                  size="sm"
@@ -1107,8 +1148,7 @@ const AdminPanel: React.FC = () => {
                                      showToast('Szinkronizálás elindítva...', 'info');
                                      await apiService.uploadToVault(backup.id);
                                      showToast('Feltöltés a háttérben fut. Értesítést kapsz, ha kész.', 'success');
-                                     // Poll or update UI status
-                                     setTimeout(fetchData, 2000);
+                                     fetchData();
                                    } catch (e) {
                                      showToast('Vault hiba: ' + (e as Error).message, 'error');
                                    }
@@ -1116,18 +1156,41 @@ const AdminPanel: React.FC = () => {
                                >
                                  <Cloud className="w-4 h-4" />
                                </Button>
+                             ) : isUploading ? (
+                               <div className="h-8 w-8 flex items-center justify-center">
+                                 <RefreshCw className="w-4 h-4 text-amber-500 animate-spin" />
+                               </div>
                              ) : (
-                               link && (
+                               <div className="flex gap-1">
+                                 {link && (
+                                   <Button
+                                     variant="ghost"
+                                     size="sm"
+                                     className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                     title="Megnyitás Google Drive-on"
+                                     onClick={() => window.open(link, '_blank')}
+                                   >
+                                     <ExternalLink className="w-4 h-4" />
+                                   </Button>
+                                 )}
                                  <Button
                                    variant="ghost"
                                    size="sm"
-                                   className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                   title="Megnyitás Google Drive-on"
-                                   onClick={() => window.open(link, '_blank')}
+                                   className="h-8 w-8 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                   title="Újraszinkronizálás"
+                                   onClick={async () => {
+                                     try {
+                                       showToast('Újraszinkronizálás elindítva...', 'info');
+                                       await apiService.uploadToVault(backup.id);
+                                       fetchData();
+                                     } catch (e) {
+                                       showToast('Vault hiba: ' + (e as Error).message, 'error');
+                                     }
+                                   }}
                                  >
-                                   <ExternalLink className="w-4 h-4" />
+                                   <RefreshCw className="w-4 h-4" />
                                  </Button>
-                               )
+                               </div>
                              )}
                           </div>
                         );

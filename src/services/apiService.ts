@@ -596,4 +596,14 @@ export const apiService = {
     await handleResponse(response);
     return await response.json();
   },
+
+  async runMaintenance(testMode: boolean = false): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/system/maintenance`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ testMode }),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
 };
