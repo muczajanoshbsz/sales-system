@@ -1962,8 +1962,19 @@ async function startServer() {
 
   adminRouter.get('/backups', async (_req, res) => {
     try {
-      const backups = await runQuery(pool, 'SELECT * FROM backups ORDER BY created_at DESC');
+      const backups = await runQuery(pool, 'SELECT id, filename, size, type, format, created_by, created_at, metadata FROM backups ORDER BY created_at DESC');
       res.json(backups);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.get('/backups/details/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
+      if (!backup.length) return res.status(404).json({ error: 'Mentés nem található' });
+      res.json(backup[0]);
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
@@ -2170,8 +2181,19 @@ async function startServer() {
   adminRouter.post('/backups/vault-upload/:id', async (req, res) => {
     try {
       const { id } = req.params;
+      // Fetch full backup with data for upload
       const backupRows = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
       if (!backupRows.length) return res.status(404).json({ error: 'Mentés nem található' });
+
+      // Fallback to disk if DB data is missing (for legacy or low-memory filtered backups)
+      if (!backupRows[0].data) {
+        const filePath = path.join(BACKUP_DIR, backupRows[0].filename);
+        if (fs.existsSync(filePath)) {
+          backupRows[0].data = fs.readFileSync(filePath, 'utf8');
+        } else {
+          return res.status(400).json({ error: 'A mentés bináris adata nem található sem az adatbázisban, sem a lemezen.' });
+        }
+      }
 
       // Set initial uploading status so UI can react
       let initialMetadata = backupRows[0].metadata || {};
