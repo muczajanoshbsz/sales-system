@@ -606,4 +606,12 @@ export const apiService = {
     await handleResponse(response);
     return await response.json();
   },
+
+  async getAITips(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/ai/tips`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
 };

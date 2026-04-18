@@ -65,7 +65,7 @@ import { ProductModel } from '../types';
 
 import { GhostModeModal } from './GhostModeModal';
 
-type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups' | 'diagnostics' | 'reports';
+type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups' | 'diagnostics' | 'reports' | 'intelligence';
 
 const AdminPanel: React.FC = () => {
   const { showToast } = useToast();
@@ -82,6 +82,7 @@ const AdminPanel: React.FC = () => {
   const [catalogModels, setCatalogModels] = useState<ProductModel[]>([]);
   const [backups, setBackups] = useState<any[]>([]);
   const [weeklyReport, setWeeklyReport] = useState<any>(null);
+  const [aiTips, setAiTips] = useState<any[]>([]);
   const [testLoading, setTestLoading] = useState(false);
   const [diagnostics, setDiagnostics] = useState<{ report: string; timestamp: string } | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
@@ -185,6 +186,10 @@ const AdminPanel: React.FC = () => {
           const reportData = await apiService.getWeeklyReport();
           setWeeklyReport(reportData);
           break;
+        case 'intelligence':
+          const tipsData = await apiService.getAITips();
+          setAiTips(tipsData);
+          break;
       }
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -211,6 +216,7 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'logs') return logs.filter(l => l.action.toLowerCase().includes(term) || l.userEmail?.toLowerCase().includes(term));
     if (activeTab === 'catalog') return catalogModels.filter(m => m.name.toLowerCase().includes(term));
     if (activeTab === 'backups') return (Array.isArray(backups) ? backups : []).filter(b => b.filename.toLowerCase().includes(term) || (b.created_by || '').toLowerCase().includes(term));
+    if (activeTab === 'intelligence') return aiTips.filter(t => t.content.toLowerCase().includes(term));
     return [];
   };
 
@@ -818,6 +824,108 @@ const AdminPanel: React.FC = () => {
     } catch (e) {
       return {};
     }
+  };
+
+  const renderIntelligence = () => {
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">AI Vezérlő & Autonómia</h2>
+            <p className="text-sm text-slate-500 font-medium">A rendszer önálló döntései és üzleti tippjei</p>
+          </div>
+          <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-full border border-emerald-100 dark:border-emerald-900/30 flex items-center gap-2">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Rendszer Egészség: Kiváló</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                <ShieldCheck className="w-5 h-5 text-indigo-500" />
+              </div>
+              <h3 className="font-bold uppercase tracking-widest text-xs">Self-Healing</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-4 font-medium">Automatikus hibajavítás és szinkronizáció figyelés.</p>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 dark:bg-indigo-900/10 px-3 py-1.5 rounded-lg inline-block">
+              Aktív (15 perces ciklus)
+            </div>
+          </Card>
+
+          <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                <TrendingUpIcon className="w-5 h-5 text-amber-500" />
+              </div>
+              <h3 className="font-bold uppercase tracking-widest text-xs">Készlet Előrejelzés</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-4 font-medium">Burn-rate alapú jóslás a készlet kifogyására.</p>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-amber-600 bg-amber-50 dark:bg-amber-900/10 px-3 py-1.5 rounded-lg inline-block">
+              Kifutás alapú figyelés
+            </div>
+          </Card>
+
+          <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                <Brain className="w-5 h-5 text-purple-500" />
+              </div>
+              <h3 className="font-bold uppercase tracking-widest text-xs">Proaktív AI Ügynök</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-4 font-medium">Napi üzleti tippek és anomália detektálás.</p>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-purple-600 bg-purple-50 dark:bg-purple-900/10 px-3 py-1.5 rounded-lg inline-block">
+              Napzáráskori elemzés
+            </div>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-500" />
+            <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Üzletvezetői Tippek</h3>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {aiTips.length > 0 ? aiTips.map((tip) => (
+              <motion.div
+                key={tip.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex gap-6"
+              >
+                <div className={cn(
+                  "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
+                  tip.type === 'pricing' ? "bg-emerald-50 text-emerald-600" :
+                  tip.type === 'stock' ? "bg-amber-50 text-amber-600" : "bg-indigo-50 text-indigo-600"
+                )}>
+                  {tip.type === 'pricing' ? <DollarSign className="w-6 h-6" /> :
+                   tip.type === 'stock' ? <Package className="w-6 h-6" /> : <Info className="w-6 h-6" />}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      {new Date(tip.created_at).toLocaleDateString('hu-HU')}
+                    </span>
+                    <Badge variant={tip.type === 'pricing' ? 'success' : tip.type === 'stock' ? 'warning' : 'info'}>
+                      {tip.type.toUpperCase()}
+                    </Badge>
+                  </div>
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-relaxed italic">
+                    "{tip.content}"
+                  </p>
+                </div>
+              </motion.div>
+            )) : (
+              <div className="py-12 text-center text-slate-400 font-medium italic bg-slate-50 dark:bg-slate-900/20 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                Még nincsenek AI tippek. A rendszer minden napzáráskor generál újakat.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const renderVaultSetupModal = () => (
@@ -1429,6 +1537,7 @@ const AdminPanel: React.FC = () => {
       case 'backups': return renderBackups();
       case 'diagnostics': return renderDiagnostics();
       case 'reports': return renderReports();
+      case 'intelligence': return renderIntelligence();
       default: return renderTable();
     }
   };
@@ -1484,6 +1593,16 @@ const AdminPanel: React.FC = () => {
           >
             <FileText className="w-3.5 h-3.5" />
             Heti Jelentés
+          </button>
+          <button
+            onClick={() => setActiveTab('intelligence')}
+            className={cn(
+              "px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+              activeTab === 'intelligence' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            )}
+          >
+            <Bot className="w-3.5 h-3.5" />
+            AI Vezérlő
           </button>
           <button
             onClick={() => setActiveTab('users')}
