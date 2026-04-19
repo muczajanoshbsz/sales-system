@@ -121,7 +121,7 @@ const Calculator: React.FC = () => {
             <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-2xl border border-amber-100 dark:border-amber-900/20">
               <Info className="w-5 h-5 text-amber-600 shrink-0" />
               <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium">
-                Az adatok alapértelmezés szerint a Vinted aktuális magyarországi díjait mutatják (890 Ft Futárszolgálat, 280 Ft + 5% vevővédelem).
+                Az adatok alapértelmezés szerint a Vinted aktuális magyarországi díjait mutatják (890 Ft GLS, 280 Ft + 5% vevővédelem).
               </p>
             </div>
           </div>
