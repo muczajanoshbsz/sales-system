@@ -25,6 +25,7 @@ const Navbar: React.FC = () => {
   const toolItems = [
     { id: 'ai', path: '/ai', label: 'AI Elemzés', icon: Brain },
     { id: 'assistant', path: '/assistant', label: 'Asszisztens', icon: MessageSquare },
+    { id: 'calculator', path: '/calculator', label: 'Számológép', icon: Sparkles },
     { id: 'map', path: '/map', label: 'Térkép', icon: MapIcon },
     { id: 'search', path: '/search', label: 'Keresés', icon: Search },
   ];

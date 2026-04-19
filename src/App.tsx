@@ -19,11 +19,11 @@ import Settings from './components/Settings';
 import AuditLogs from './components/AuditLogs';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
+import Calculator from './components/Calculator.tsx';
 import ErrorBoundary from './components/ErrorBoundary';
-import {OnboardingTour} from './components/OnBoardingtour.tsx';
+import { OnboardingTour } from './components/OnBoardingtour.tsx';
 import { GhostBar } from './components/GhostBar';
 import { TimeTravelBar } from './components/TimeTravelBar';
-import { NotificationCenter } from './components/NotificationCenter.tsx';
 import { logout } from './firebase';
 import { Ghost } from 'lucide-react';
 import { Button } from './components/ui/Base';
@@ -228,6 +228,7 @@ const AppContent: React.FC = () => {
         <Route path="/map" element={<SalesMap />} />
         <Route path="/search" element={<SearchAnalytics />} />
         <Route path="/audit" element={<AuditLogs />} />
+        <Route path="/calculator" element={<Calculator />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/admin" element={profile?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
