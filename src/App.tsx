@@ -19,12 +19,11 @@ import Settings from './components/Settings';
 import AuditLogs from './components/AuditLogs';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
-import Calculator from './components/Calculator';
+import Calculator from './components/Calculator.tsx';
 import ErrorBoundary from './components/ErrorBoundary';
 import { OnboardingTour } from './components/OnBoardingtour.tsx';
 import { GhostBar } from './components/GhostBar';
 import { TimeTravelBar } from './components/TimeTravelBar';
-import { SessionMonitor } from './components/SessionMonitor.tsx';
 import { logout } from './firebase';
 import { Ghost } from 'lucide-react';
 import { Button } from './components/ui/Base';
@@ -143,101 +142,99 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <SessionMonitor>
-      <div className={cn(
-        "min-h-screen transition-all duration-500",
-        (ghostMode.isActive || timeTravel.isActive) && "ring-4 ring-indigo-500/30 ring-inset pt-12"
-      )}>
-        <AnimatePresence>
-          {showTeleport && (
+    <div className={cn(
+      "min-h-screen transition-all duration-500",
+      (ghostMode.isActive || timeTravel.isActive) && "ring-4 ring-indigo-500/30 ring-inset pt-12"
+    )}>
+      <AnimatePresence>
+        {showTeleport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[10001] bg-indigo-950 flex flex-col items-center justify-center overflow-hidden"
+          >
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[10001] bg-indigo-950 flex flex-col items-center justify-center overflow-hidden"
-            >
-              <motion.div
-                animate={{ 
-                  scale: [1, 2, 1],
-                  rotate: [0, 180, 360],
-                  opacity: [0.1, 0.3, 0.1]
-                }}
-                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                className="absolute w-[800px] h-[800px] bg-indigo-500/20 rounded-full blur-[120px]"
-              />
-              
-              <div className="relative flex flex-col items-center gap-8">
-                <motion.div
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: "spring", damping: 12 }}
-                  className="w-24 h-24 bg-indigo-500/20 rounded-3xl border border-indigo-500/30 flex items-center justify-center backdrop-blur-xl"
-                >
-                  <Ghost className="w-12 h-12 text-indigo-400 animate-pulse" />
-                </motion.div>
-                
-                <div className="flex flex-col items-center gap-2">
-                  <motion.h2 
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.2 }}
-                    className="text-4xl font-black text-white tracking-tighter italic"
-                  >
-                    TELEPORTÁLÁS...
-                  </motion.h2>
-                  <motion.p
-                    initial={{ y: 10, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.3 }}
-                    className="text-indigo-400 font-bold uppercase tracking-[0.3em] text-xs"
-                  >
-                    Szellem Mód Aktiválása
-                  </motion.p>
-                </div>
-              </div>
-
-              {/* Scanning line effect */}
-              <motion.div 
-                animate={{ y: ['-100%', '200%'] }}
-                transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-400/50 to-transparent blur-sm"
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <GhostBar />
-        <TimeTravelBar />
-        <Layout>
-          {(ghostMode.isActive || timeTravel.isActive) && (
-            <div className="fixed inset-0 pointer-events-none z-[9999] bg-indigo-500/5 mix-blend-overlay" />
-          )}
-          <AnimatePresence>
-          {profile && !profile.has_seen_onboarding && (
-            <OnboardingTour 
-              userName={profile.displayName || profile.email.split('@')[0]} 
-              onComplete={completeOnboarding}
+              animate={{ 
+                scale: [1, 2, 1],
+                rotate: [0, 180, 360],
+                opacity: [0.1, 0.3, 0.1]
+              }}
+              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+              className="absolute w-[800px] h-[800px] bg-indigo-500/20 rounded-full blur-[120px]"
             />
-          )}
-        </AnimatePresence>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/sales" element={<SalesManager />} />
-          <Route path="/inventory" element={<InventoryManager />} />
-          <Route path="/procurement" element={<ProcurementManager />} />
-          <Route path="/ai" element={<ErrorBoundary><AIDashboard /></ErrorBoundary>} />
-          <Route path="/assistant" element={<BusinessAssistant />} />
-          <Route path="/map" element={<SalesMap />} />
-          <Route path="/search" element={<SearchAnalytics />} />
-          <Route path="/audit" element={<AuditLogs />} />
-          <Route path="/calculator" element={<Calculator />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/admin" element={profile?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Layout>
-      </div>
-    </SessionMonitor>
+            
+            <div className="relative flex flex-col items-center gap-8">
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", damping: 12 }}
+                className="w-24 h-24 bg-indigo-500/20 rounded-3xl border border-indigo-500/30 flex items-center justify-center backdrop-blur-xl"
+              >
+                <Ghost className="w-12 h-12 text-indigo-400 animate-pulse" />
+              </motion.div>
+              
+              <div className="flex flex-col items-center gap-2">
+                <motion.h2 
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-4xl font-black text-white tracking-tighter italic"
+                >
+                  TELEPORTÁLÁS...
+                </motion.h2>
+                <motion.p
+                  initial={{ y: 10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="text-indigo-400 font-bold uppercase tracking-[0.3em] text-xs"
+                >
+                  Szellem Mód Aktiválása
+                </motion.p>
+              </div>
+            </div>
+
+            {/* Scanning line effect */}
+            <motion.div 
+              animate={{ y: ['-100%', '200%'] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+              className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-400/50 to-transparent blur-sm"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <GhostBar />
+      <TimeTravelBar />
+      <Layout>
+        {(ghostMode.isActive || timeTravel.isActive) && (
+          <div className="fixed inset-0 pointer-events-none z-[9999] bg-indigo-500/5 mix-blend-overlay" />
+        )}
+        <AnimatePresence>
+        {profile && !profile.has_seen_onboarding && (
+          <OnboardingTour 
+            userName={profile.displayName || profile.email.split('@')[0]} 
+            onComplete={completeOnboarding}
+          />
+        )}
+      </AnimatePresence>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/sales" element={<SalesManager />} />
+        <Route path="/inventory" element={<InventoryManager />} />
+        <Route path="/procurement" element={<ProcurementManager />} />
+        <Route path="/ai" element={<ErrorBoundary><AIDashboard /></ErrorBoundary>} />
+        <Route path="/assistant" element={<BusinessAssistant />} />
+        <Route path="/map" element={<SalesMap />} />
+        <Route path="/search" element={<SearchAnalytics />} />
+        <Route path="/audit" element={<AuditLogs />} />
+        <Route path="/calculator" element={<Calculator />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/admin" element={profile?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
+    </div>
   );
 };
 

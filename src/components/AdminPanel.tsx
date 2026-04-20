@@ -52,9 +52,7 @@ import {
   Sparkles,
   MessageSquare,
   TrendingUp as TrendingUpIcon,
-  Info,
-  Zap,
-  AlertCircle
+  Info
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { Card, Button, Badge, LoadingSpinner } from './ui/Base';
@@ -85,9 +83,6 @@ const AdminPanel: React.FC = () => {
   const [backups, setBackups] = useState<any[]>([]);
   const [weeklyReport, setWeeklyReport] = useState<any>(null);
   const [aiTips, setAiTips] = useState<any[]>([]);
-  const [auditFlags, setAuditFlags] = useState<any[]>([]);
-  const [healthChecks, setHealthChecks] = useState<any[]>([]);
-  const [archivedSummaries, setArchivedSummaries] = useState<any[]>([]);
   const [testLoading, setTestLoading] = useState(false);
   const [diagnostics, setDiagnostics] = useState<{ report: string; timestamp: string } | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
@@ -105,37 +100,7 @@ const AdminPanel: React.FC = () => {
   const [vaultConfigInput, setVaultConfigInput] = useState('');
   const [configs, setConfigs] = useState<any[]>([]);
   const [ghostTarget, setGhostTarget] = useState<any>(null);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<any>(null);
-  const [deleteMode, setDeleteMode] = useState<'cascade' | 'anonymize'>('anonymize');
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [localTimeout, setLocalTimeout] = useState<string>('15');
   const { enterGhostMode, enterTimeTravel } = useFirebase();
-
-  useEffect(() => {
-    const sessionConfig = (Array.isArray(configs) ? configs : []).find(c => c.key === 'SESSION_TIMEOUT_MINUTES');
-    if (sessionConfig) {
-      setLocalTimeout(sessionConfig.value);
-    }
-  }, [configs]);
-
-  useEffect(() => {
-    const sessionConfig = (Array.isArray(configs) ? configs : []).find(c => c.key === 'SESSION_TIMEOUT_MINUTES');
-    if (!sessionConfig || localTimeout === sessionConfig.value) return;
-
-    const timer = setTimeout(async () => {
-      try {
-        await apiService.updateSystemConfig('SESSION_TIMEOUT_MINUTES', localTimeout);
-        showToast(`Időkorlát frissítve: ${localTimeout} perc`, 'success');
-        fetchData();
-      } catch (err) {
-        showToast('Hiba a mentés során', 'error');
-        setLocalTimeout(sessionConfig.value || '15');
-      }
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, [localTimeout, configs]);
 
   useEffect(() => {
     fetchData();
@@ -222,16 +187,8 @@ const AdminPanel: React.FC = () => {
           setWeeklyReport(reportData);
           break;
         case 'intelligence':
-          const [tipsData, auditData, healthData, archivesData] = await Promise.all([
-            apiService.getAITips(),
-            apiService.getAIDataAuditFlags(),
-            apiService.getSystemHealthChecks(),
-            apiService.getArchivedSummaries()
-          ]);
+          const tipsData = await apiService.getAITips();
           setAiTips(tipsData);
-          setAuditFlags(auditData);
-          setHealthChecks(healthData);
-          setArchivedSummaries(archivesData);
           break;
       }
     } catch (error) {
@@ -312,23 +269,6 @@ const AdminPanel: React.FC = () => {
       console.error('Error fetching insights:', error);
     } finally {
       setInsightsLoading(false);
-    }
-  };
-
-  const handleProfessionalDelete = async () => {
-    if (!userToDelete) return;
-    setIsDeleting(true);
-    try {
-      await apiService.professionalDeleteUser(userToDelete.uid, deleteMode);
-      showToast('Felhasználó sikeresen törölve a kért módon.', 'success');
-      setDeleteModalOpen(false);
-      setUserToDelete(null);
-      fetchData();
-    } catch (error) {
-      console.error('Delete failed:', error);
-      showToast('Hiba a törlés során.', 'error');
-    } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -616,18 +556,6 @@ const AdminPanel: React.FC = () => {
                           >
                             {item.is_suspended ? <UserCheck className="w-4 h-4 text-emerald-500" /> : <Ban className="w-4 h-4 text-red-500" />}
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => {
-                              setUserToDelete(item);
-                              setDeleteModalOpen(true);
-                            }}
-                            title="Végleges Törlés"
-                            className="text-red-600 hover:bg-red-50"
-                          >
-                            <Trash className="w-4 h-4" />
-                          </Button>
                         </div>
                       </td>
                     </>
@@ -899,55 +827,20 @@ const AdminPanel: React.FC = () => {
   };
 
   const renderIntelligence = () => {
-    const drillHistory = healthChecks.filter(h => h.type === 'drill');
-    const optimizerHistory = healthChecks.filter(h => h.type === 'optimizer');
-
     return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">AI Vezérlő & Autonómia</h2>
             <p className="text-sm text-slate-500 font-medium">A rendszer önálló döntései és üzleti tippjei</p>
           </div>
-          <div className="flex gap-2">
-             <Button 
-               size="sm" 
-               variant="outline"
-               onClick={async () => {
-                 setLoading(true);
-                 try {
-                   await apiService.triggerRecoveryDrill();
-                   showToast('Recovery Drill elindítva!', 'success');
-                   fetchData();
-                 } catch(e) { showToast('Hiba a Drill során', 'error'); }
-                 finally { setLoading(false); }
-               }}
-               disabled={loading}
-             >
-               <ShieldCheck className="w-4 h-4 mr-2" />
-               Drill futtatás
-             </Button>
-             <Button 
-               size="sm" 
-               variant="outline"
-               onClick={async () => {
-                 setLoading(true);
-                 try {
-                   await apiService.triggerAIDataAudit();
-                   showToast('AI Audit elindítva!', 'success');
-                   fetchData();
-                 } catch(e) { showToast('Hiba az Audit során', 'error'); }
-                 finally { setLoading(false); }
-               }}
-               disabled={loading}
-             >
-               <Bot className="w-4 h-4 mr-2" />
-               AI Audit
-             </Button>
+          <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-full border border-emerald-100 dark:border-emerald-900/30 flex items-center gap-2">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Rendszer Egészség: Kiváló</span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
@@ -955,180 +848,81 @@ const AdminPanel: React.FC = () => {
               </div>
               <h3 className="font-bold uppercase tracking-widest text-xs">Self-Healing</h3>
             </div>
-            <p className="text-[10px] text-slate-500 mb-4 font-medium">Automatikus hibajavítás és szinkronizáció figyelés.</p>
+            <p className="text-xs text-slate-500 mb-4 font-medium">Automatikus hibajavítás és szinkronizáció figyelés.</p>
             <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 dark:bg-indigo-900/10 px-3 py-1.5 rounded-lg inline-block">
-              Aktív (15 perc)
+              Aktív (15 perces ciklus)
             </div>
           </Card>
 
           <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                <ShieldAlert className="w-5 h-5 text-amber-500" />
+                <TrendingUpIcon className="w-5 h-5 text-amber-500" />
               </div>
-              <h3 className="font-bold uppercase tracking-widest text-xs">AI Data Guard</h3>
+              <h3 className="font-bold uppercase tracking-widest text-xs">Készlet Előrejelzés</h3>
             </div>
-            <p className="text-[10px] text-slate-500 mb-4 font-medium">Automatikus adatminőség és anomália szűrés.</p>
+            <p className="text-xs text-slate-500 mb-4 font-medium">Burn-rate alapú jóslás a készlet kifogyására.</p>
             <div className="text-[10px] font-bold uppercase tracking-widest text-amber-600 bg-amber-50 dark:bg-amber-900/10 px-3 py-1.5 rounded-lg inline-block">
-              Aktív (Napzárás)
-            </div>
-          </Card>
-
-          <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-                <Zap className="w-5 h-5 text-emerald-500" />
-              </div>
-              <h3 className="font-bold uppercase tracking-widest text-xs">DB Optimizer</h3>
-            </div>
-            <p className="text-[10px] text-slate-500 mb-4 font-medium">Adatbázis önhangolás és tisztítás.</p>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-50 dark:bg-emerald-900/10 px-3 py-1.5 rounded-lg inline-block">
-              Aktív (Hetente)
+              Kifutás alapú figyelés
             </div>
           </Card>
 
           <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                <Clock className="w-5 h-5 text-purple-500" />
+                <Brain className="w-5 h-5 text-purple-500" />
               </div>
-              <h3 className="font-bold uppercase tracking-widest text-xs">Historian</h3>
+              <h3 className="font-bold uppercase tracking-widest text-xs">Proaktív AI Ügynök</h3>
             </div>
-            <p className="text-[10px] text-slate-500 mb-4 font-medium">Régi adatok archiválása és tömörítése.</p>
+            <p className="text-xs text-slate-500 mb-4 font-medium">Napi üzleti tippek és anomália detektálás.</p>
             <div className="text-[10px] font-bold uppercase tracking-widest text-purple-600 bg-purple-50 dark:bg-purple-900/10 px-3 py-1.5 rounded-lg inline-block">
-              Aktív (Havonta)
+              Napzáráskori elemzés
             </div>
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-           <div className="space-y-6">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-indigo-500" />
-                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">AI Üzleti Tippek</h3>
-              </div>
-              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                {aiTips.length > 0 ? aiTips.map((tip) => (
-                  <div key={tip.id} className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex gap-4">
-                    <div className={cn(
-                      "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                      tip.type === 'pricing' ? "bg-emerald-50 text-emerald-600" :
-                      tip.type === 'stock' ? "bg-amber-50 text-amber-600" :
-                      "bg-indigo-50 text-indigo-600"
-                    )}>
-                      {tip.type === 'pricing' ? <TrendingUpIcon className="w-5 h-5" /> : tip.type === 'stock' ? <Package className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white leading-relaxed">{tip.content}</p>
-                      <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-wider">{new Date(tip.created_at).toLocaleString()}</p>
-                    </div>
-                  </div>
-                )) : <p className="text-sm text-slate-500 text-center py-8">Nincsenek új tippek.</p>}
-              </div>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-500" />
+            <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Üzletvezetői Tippek</h3>
+          </div>
 
-              <div className="flex items-center gap-2 mt-8">
-                <ShieldAlert className="w-5 h-5 text-amber-500" />
-                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">AI Adat Audit Jelzések</h3>
-              </div>
-              <div className="space-y-4">
-                {auditFlags.length > 0 ? auditFlags.map((flag) => (
-                  <div key={flag.id} className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex gap-4">
-                    <div className={cn(
-                      "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                      flag.severity === 'high' ? "bg-red-50 text-red-600" :
-                      flag.severity === 'medium' ? "bg-amber-50 text-amber-600" :
-                      "bg-blue-50 text-blue-600"
-                    )}>
-                      <AlertCircle className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={cn(
-                          "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded",
-                          flag.severity === 'high' ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"
-                        )}>{flag.severity} RISK</span>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{flag.entity_type} #{flag.entity_id}</span>
-                      </div>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{flag.description}</p>
-                      <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 font-medium italic">💡 Javaslat: {flag.suggestion}</p>
-                    </div>
-                  </div>
-                )) : <p className="text-sm text-slate-500 text-center py-8">Az AI nem talált adatminőségi hibát.</p>}
-              </div>
-           </div>
-
-           <div className="space-y-6">
-              <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-emerald-500" />
-                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Rendszer Egészség Könyv</h3>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-950 p-6 rounded-3xl border border-slate-200 dark:border-slate-900 space-y-4">
-                <div className="space-y-3">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Utolsó Drillek</h4>
-                  {drillHistory.slice(0, 5).map(h => (
-                    <div key={h.id} className="flex items-center justify-between text-xs py-2 border-b border-slate-200 dark:border-slate-800 last:border-0">
-                      <div className="flex items-center gap-2 overflow-hidden">
-                         {h.status === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
-                         <span className="font-bold text-slate-700 dark:text-slate-300 truncate">{h.message}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 shrink-0">{new Date(h.created_at).toLocaleDateString()}</span>
-                    </div>
-                  ))}
-                  {drillHistory.length === 0 && <p className="text-[10px] text-slate-400 italic">Még nem volt ellenőrzés.</p>}
+          <div className="grid grid-cols-1 gap-4">
+            {aiTips.length > 0 ? aiTips.map((tip) => (
+              <motion.div
+                key={tip.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex gap-6"
+              >
+                <div className={cn(
+                  "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
+                  tip.type === 'pricing' ? "bg-emerald-50 text-emerald-600" :
+                  tip.type === 'stock' ? "bg-amber-50 text-amber-600" : "bg-indigo-50 text-indigo-600"
+                )}>
+                  {tip.type === 'pricing' ? <DollarSign className="w-6 h-6" /> :
+                   tip.type === 'stock' ? <Package className="w-6 h-6" /> : <Info className="w-6 h-6" />}
                 </div>
-
-                <div className="space-y-3 pt-4">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Karbantartás Napló</h4>
-                  {optimizerHistory.slice(0, 3).map(h => (
-                    <div key={h.id} className="flex items-center justify-between text-xs py-2 border-b border-slate-200 dark:border-slate-800 last:border-0">
-                       <div className="flex items-center gap-2">
-                         <Zap className="w-4 h-4 text-amber-500" />
-                         <span className="font-bold text-slate-700 dark:text-slate-300">Sikeres optimalizálás</span>
-                       </div>
-                       <span className="text-[10px] text-slate-400">{new Date(h.created_at).toLocaleDateString()}</span>
-                    </div>
-                  ))}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      {new Date(tip.created_at).toLocaleDateString('hu-HU')}
+                    </span>
+                    <Badge variant={tip.type === 'pricing' ? 'success' : tip.type === 'stock' ? 'warning' : 'info'}>
+                      {tip.type.toUpperCase()}
+                    </Badge>
+                  </div>
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-relaxed italic">
+                    "{tip.content}"
+                  </p>
                 </div>
+              </motion.div>
+            )) : (
+              <div className="py-12 text-center text-slate-400 font-medium italic bg-slate-50 dark:bg-slate-900/20 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                Még nincsenek AI tippek. A rendszer minden napzáráskor generál újakat.
               </div>
-
-              <div className="flex items-center gap-2 mt-8">
-                <Archive className="w-5 h-5 text-purple-500" />
-                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Üzleti Emlékezet (Archívum)</h3>
-              </div>
-              <div className="space-y-4">
-                 {archivedSummaries.map(arch => {
-                   const data = safeParseMetadata(arch.data_summary);
-                   return (
-                     <div key={arch.id} className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700">
-                       <div className="flex justify-between items-start mb-4">
-                         <div>
-                            <h4 className="font-black text-slate-900 dark:text-white uppercase tracking-tight">{arch.period_start.substring(0, 7)} Időszak</h4>
-                            <p className="text-[10px] font-bold text-purple-600 uppercase tracking-widest">Tömörített üzleti adatok</p>
-                         </div>
-                         <a href={arch.archive_link} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg hover:bg-slate-100 transition-colors">
-                            <ExternalLink className="w-4 h-4 text-slate-600" />
-                         </a>
-                       </div>
-                       <div className="grid grid-cols-3 gap-2">
-                          <div className="bg-slate-50 dark:bg-slate-950 p-2 rounded-xl text-center">
-                             <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Eladás</p>
-                             <p className="text-xs font-bold text-slate-900 dark:text-white">{data.salesCount} db</p>
-                          </div>
-                          <div className="bg-slate-50 dark:bg-slate-950 p-2 rounded-xl text-center">
-                             <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Profit</p>
-                             <p className="text-xs font-bold text-emerald-600">+{formatCurrency(data.profit)}</p>
-                          </div>
-                          <div className="bg-slate-50 dark:bg-slate-950 p-2 rounded-xl text-center">
-                             <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Bevétel</p>
-                             <p className="text-xs font-bold text-indigo-600">+{formatCurrency(data.revenue)}</p>
-                          </div>
-                       </div>
-                     </div>
-                   );
-                 })}
-                 {archivedSummaries.length === 0 && <p className="text-sm text-slate-500 text-center py-8">Még nincs archivált adat.</p>}
-              </div>
-           </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1296,60 +1090,6 @@ const AdminPanel: React.FC = () => {
               <Settings className="w-4 h-4" />
               Konfigurálás
             </Button>
-          </div>
-        </Card>
-
-        {/* Professional Session Timeout Config */}
-        <Card className="p-6 bg-indigo-900 border-none text-white shadow-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
-            <ShieldAlert className="w-24 h-24" />
-          </div>
-          <div className="flex items-center gap-4 mb-4 relative z-10">
-            <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
-              <Clock className="w-6 h-6 text-indigo-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black tracking-tight text-white uppercase">Munkamenet Időkorlát</h3>
-              <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Automatikus Kijelentkezés</p>
-            </div>
-          </div>
-          
-          <div className="space-y-4 relative z-10">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300">Biztonsági Időkorlát</span>
-              <span className="text-lg font-black text-indigo-400">
-                {localTimeout} perc
-              </span>
-            </div>
-            
-            <input 
-              type="range" 
-              min="5" 
-              max="60" 
-              step="5"
-              value={localTimeout}
-              onChange={(e) => setLocalTimeout(e.target.value)}
-              className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-            
-            <div className="grid grid-cols-2 gap-2 text-[8px] font-black uppercase text-slate-500 tracking-tighter">
-              <div className="flex items-center gap-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                Privacy Blur
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
-                Countdown
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                Draft Protection
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-                Cross-Tab Sync
-              </div>
-            </div>
           </div>
         </Card>
       </div>
@@ -2143,105 +1883,6 @@ const AdminPanel: React.FC = () => {
                     disabled={isCreatingAutoBackup}
                   >
                     Később emlékeztess
-                  </Button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-      
-      {/* Professional Delete Modal */}
-      <AnimatePresence>
-        {deleteModalOpen && userToDelete && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden"
-            >
-              <div className="p-8">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-14 h-14 bg-red-100 dark:bg-red-900/30 rounded-2xl flex items-center justify-center">
-                    <Trash2 className="w-8 h-8 text-red-600 dark:text-red-400" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Végleges Törlés</h2>
-                    <p className="text-sm text-slate-500">{userToDelete.email}</p>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-2xl mb-8">
-                  <div className="flex gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
-                    <p className="text-xs text-red-800 dark:text-red-300 leading-relaxed font-medium">
-                      Figyelem: Ez a művelet nem visszavonható. A törlés előtt a rendszer biztonsági mentést készít a felhasználó adatairól és elküldi az adminisztrátornak.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-4 mb-8">
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">Válassz törlési módot:</p>
-                  <div className="grid grid-cols-1 gap-3">
-                    <button
-                      onClick={() => setDeleteMode('anonymize')}
-                      className={cn(
-                        "flex items-start gap-4 p-4 rounded-2xl border-2 transition-all text-left",
-                        deleteMode === 'anonymize' 
-                          ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/20" 
-                          : "border-slate-100 dark:border-slate-800 hover:border-slate-300"
-                      )}
-                    >
-                      <div className={cn("mt-1 p-1 rounded-full", deleteMode === 'anonymize' ? "bg-indigo-600" : "bg-slate-200 dark:bg-slate-700")}>
-                        <CheckCircle2 className="w-3 h-3 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">Anonimizálás (Ajánlott)</p>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-1">
-                          Személyes adatok törlése, de az eladások/statisztikák megtartása név nélkül a globális profit számításához.
-                        </p>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => setDeleteMode('cascade')}
-                      className={cn(
-                        "flex items-start gap-4 p-4 rounded-2xl border-2 transition-all text-left",
-                        deleteMode === 'cascade' 
-                          ? "border-red-600 bg-red-50/50 dark:bg-red-900/20" 
-                          : "border-slate-100 dark:border-slate-800 hover:border-slate-300"
-                      )}
-                    >
-                      <div className={cn("mt-1 p-1 rounded-full", deleteMode === 'cascade' ? "bg-red-600" : "bg-slate-200 dark:bg-slate-700")}>
-                        <Trash className="w-3 h-3 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">Nukleáris Törlés (Cascade)</p>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-1">
-                          Mindent töröl véglegesen (eladások, készlet, naplók). A globális statisztikák is módosulni fognak.
-                        </p>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <Button 
-                    variant="ghost" 
-                    className="flex-1 py-4 uppercase tracking-widest text-[10px] font-black"
-                    onClick={() => setDeleteModalOpen(false)}
-                    disabled={isDeleting}
-                  >
-                    Vissza
-                  </Button>
-                  <Button 
-                    variant="danger" 
-                    className="flex-1 py-4 uppercase tracking-widest text-[10px] font-black shadow-lg shadow-red-200 dark:shadow-none"
-                    onClick={handleProfessionalDelete}
-                    disabled={isDeleting}
-                  >
-                    {isDeleting ? <LoadingSpinner size="sm" /> : 'Végrehajtás'}
                   </Button>
                 </div>
               </div>
