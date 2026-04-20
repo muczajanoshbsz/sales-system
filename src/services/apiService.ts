@@ -370,6 +370,15 @@ export const apiService = {
     return await response.json();
   },
 
+  async professionalDeleteUser(uid: string, mode: 'cascade' | 'anonymize'): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/users/${uid}/professional-delete`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ mode }),
+    });
+    await handleResponse(response);
+  },
+
   // Catalog
   async getCatalogModels(): Promise<ProductModel[]> {
     const response = await fetch(`${API_BASE}/catalog/models`, {
@@ -609,6 +618,48 @@ export const apiService = {
 
   async getAITips(): Promise<any[]> {
     const response = await fetch(`${API_BASE}/admin/ai/tips`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getAIDataAuditFlags(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/ai/audit-flags`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getSystemHealthChecks(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/ai/health-checks`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getArchivedSummaries(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/ai/archives`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async triggerRecoveryDrill(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/ai/trigger-drill`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async triggerAIDataAudit(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/ai/trigger-audit`, {
+      method: 'POST',
       headers: getHeaders(),
     });
     await handleResponse(response);
