@@ -109,7 +109,33 @@ const AdminPanel: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<any>(null);
   const [deleteMode, setDeleteMode] = useState<'cascade' | 'anonymize'>('anonymize');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [localTimeout, setLocalTimeout] = useState<string>('15');
   const { enterGhostMode, enterTimeTravel } = useFirebase();
+
+  useEffect(() => {
+    const sessionConfig = (Array.isArray(configs) ? configs : []).find(c => c.key === 'SESSION_TIMEOUT_MINUTES');
+    if (sessionConfig) {
+      setLocalTimeout(sessionConfig.value);
+    }
+  }, [configs]);
+
+  useEffect(() => {
+    const sessionConfig = (Array.isArray(configs) ? configs : []).find(c => c.key === 'SESSION_TIMEOUT_MINUTES');
+    if (!sessionConfig || localTimeout === sessionConfig.value) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        await apiService.updateSystemConfig('SESSION_TIMEOUT_MINUTES', localTimeout);
+        showToast(`Időkorlát frissítve: ${localTimeout} perc`, 'success');
+        fetchData();
+      } catch (err) {
+        showToast('Hiba a mentés során', 'error');
+        setLocalTimeout(sessionConfig.value || '15');
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [localTimeout, configs]);
 
   useEffect(() => {
     fetchData();
@@ -1270,6 +1296,60 @@ const AdminPanel: React.FC = () => {
               <Settings className="w-4 h-4" />
               Konfigurálás
             </Button>
+          </div>
+        </Card>
+
+        {/* Professional Session Timeout Config */}
+        <Card className="p-6 bg-indigo-900 border-none text-white shadow-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
+            <ShieldAlert className="w-24 h-24" />
+          </div>
+          <div className="flex items-center gap-4 mb-4 relative z-10">
+            <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
+              <Clock className="w-6 h-6 text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black tracking-tight text-white uppercase">Munkamenet Időkorlát</h3>
+              <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Automatikus Kijelentkezés</p>
+            </div>
+          </div>
+          
+          <div className="space-y-4 relative z-10">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-300">Biztonsági Időkorlát</span>
+              <span className="text-lg font-black text-indigo-400">
+                {localTimeout} perc
+              </span>
+            </div>
+            
+            <input 
+              type="range" 
+              min="5" 
+              max="60" 
+              step="5"
+              value={localTimeout}
+              onChange={(e) => setLocalTimeout(e.target.value)}
+              className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            />
+            
+            <div className="grid grid-cols-2 gap-2 text-[8px] font-black uppercase text-slate-500 tracking-tighter">
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                Privacy Blur
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
+                Countdown
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                Draft Protection
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
+                Cross-Tab Sync
+              </div>
+            </div>
           </div>
         </Card>
       </div>
