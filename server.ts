@@ -3063,97 +3063,113 @@ async function startServer() {
     }
   });
 
-  // Schedule Midnight System Artifact (Kód + Adatbázis)
-  cron.schedule('0 0 * * *', async () => {
-    console.log('🌙 Running Midnight System Snapshot...');
+  // --- CONSOLIDATED DAILY MAINTENANCE (SUPABASE EGRESS OPTIMIZATION) ---
+  async function runConsolidatedDailyMaintenance() {
+    console.log('🌟 Starting Consolidated Daily Maintenance & Backup...');
     try {
-      const artifact = await createSystemArtifact('system (auto-scheduled)');
-      await sendSystemEmail(
-        'Éjféli Rendszer Snapshot Sikeres',
-        '🌙 Éjféli Teljes Mentés Elkészült',
-        `A rendszer automatikusan elkészítette a teljes szerver-snapshotot (kód + adatbázis).`,
-        { filename: artifact.filename, size: `${(artifact.size / 1024 / 1024).toFixed(2)} MB`, date: artifact.created_at }
-      );
-    } catch (error) {
-      console.error('Midnight snapshot failed:', error);
-    }
-  });
+      // 1. Create Mega Snapshot (Encrypted)
+      const artifact = await createSystemArtifact('consolidated (auto)');
+      console.log(`✅ Snapshot created: ${artifact.filename}`);
 
-  // Schedule Proactive AI Review at 11 PM (23:00)
-  cron.schedule('0 23 * * *', async () => {
-    await runProactiveAIReview();
-  });
-
-  // Schedule daily backup at 3 AM (Napi Adatok)
-  cron.schedule('0 3 * * *', async () => {
-    console.log('Running scheduled daily backup and vault sync...');
-    try {
-      const backup = await createBackup('auto');
-      console.log(`Scheduled backup successful: ${backup.filename}. Syncing to vault...`);
-      
-      // Auto-upload to Google Drive
+      // 2. Immediate Google Drive Sync
+      let driveLink = 'N/A';
       let vaultStatus = 'failed';
-      let driveLink = null;
-
       try {
-        const uploadResult = await uploadToGoogleDrive(backup.filename, backup.data);
-        vaultStatus = 'completed';
+        const uploadResult = await uploadToGoogleDrive(artifact.filename, artifact.data);
         driveLink = uploadResult.webViewLink;
+        vaultStatus = 'completed';
 
-        let currentMetadata = backup.metadata || {};
+        let currentMetadata = artifact.metadata || {};
         if (typeof currentMetadata === 'string') try { currentMetadata = JSON.parse(currentMetadata); } catch(e) {}
 
-        await runExec(pool, 'UPDATE backups SET metadata = ? WHERE id = ?', [
+        await runExec(pool, 'UPDATE backups SET metadata = ?, data = NULL WHERE id = ?', [
           JSON.stringify({ 
               ...currentMetadata, 
               googleDriveId: uploadResult.id, 
               googleDriveLink: driveLink,
               checksum: uploadResult.checksum,
               uploadedAt: new Date().toISOString(),
-              vaultStatus: 'completed'
+              vaultStatus: 'completed',
+              isArchived: true // Mark as archived immediately to save Supabase DB storage
           }),
-          backup.id
+          artifact.id
         ]);
-        console.log('✅ Auto-vault sync successful');
+        console.log('✅ Auto-vault sync successful. Data offloaded from DB.');
       } catch (vaultErr) {
         console.error('❌ Auto-vault sync failed:', vaultErr);
       }
 
-      // Notify via Email
+      // 3. System Maintenance (Cleanup old stuff)
+      const maintenanceResult = await runSystemMaintenance(false);
+
+      // 4. Send Unified Report
       await sendSystemEmail(
-        'Hajnali Mentés Sikeres',
-        '✅ Napi Adatmentés Elkészült',
-        `A napi adatbázis mentés sikeresen lefutott.<br><b>Vault Állapot:</b> ${vaultStatus === 'completed' ? '☁️ Szinkronizálva a Google Drive-ra' : '❌ Hiba a feltöltésnél!'}`,
+        'Napi Rendszerkarbantartás Sikeres',
+        '🌟 Összesített Karbantartási Jelentés',
+        `A napi biztonsági mentés és rendszerkarbantartás lefutott.<br><br>
+         <b>Mentés:</b> ${artifact.filename}<br>
+         <b>Vault:</b> ${vaultStatus === 'completed' ? '☁️ Szinkronizálva a Google Drive-ra' : '❌ Hiba a feltöltésnél!'}<br>
+         <b>清理:</b> -${maintenanceResult.logsRemoved} napló törölve, ${maintenanceResult.backupsOffloaded} mentés archiválva.`,
         { 
-          filename: backup.filename, 
-          size: `${(backup.size / 1024).toFixed(2)} KB`, 
-          googleDrive: driveLink || 'N/A'
+          filename: artifact.filename, 
+          size: `${(artifact.size / 1024 / 1024).toFixed(2)} MB`, 
+          googleDrive: driveLink,
+          maintenance: maintenanceResult
         }
       );
+
+      // 5. Run Predictions
+      await runStockPredictions();
+
     } catch (error) {
-      console.error('Scheduled backup failed:', error);
-      await sendSystemEmail('KRITIKUS: Hajnali Mentés Sikertelen', '❌ HIBA A HAJNALI MENTÉSNÉL', `A rendszer nem tudta elkészíteni a mentést: ${(error as Error).message}`);
+      console.error('❌ Consolidated maintenance failed:', error);
+      await sendSystemEmail(
+        'KRITIKUS: Karbantartási Hiba', 
+        '❌ HIBA A NAPI KARBANTARTÁSNÁL', 
+        `Váratlan hiba történt: ${(error as Error).message}`
+      );
     }
+  }
+
+  // --- CRON TRIGGERS (OPTIMIZED FOR SUPABASE) ---
+
+  // Consolidated Daily Job at 2:00 AM
+  cron.schedule('0 2 * * *', async () => {
+    await runConsolidatedDailyMaintenance();
   });
 
-  // Schedule Weekly Report on Sunday at 8 PM (20:00)
+  // Schedule AI Data Guard: Daily at 1 AM
+  cron.schedule('0 1 * * *', async () => {
+    await runAIDataAudit();
+  });
+
+  // Schedule Proactive AI Review: Daily at 11 PM
+  cron.schedule('0 23 * * *', async () => {
+    await runProactiveAIReview();
+  });
+
+  // Schedule Weekly Report: Sunday at 8 PM
   cron.schedule('0 20 * * 0', async () => {
     console.log('Generating Scheduled Business Report...');
-    try {
-      await generateAndSendReport(14);
-      console.log('Scheduled business report generated successfully');
-    } catch (error) {
-      console.error('Scheduled business report generation failed:', error);
-    }
+    try { await generateAndSendReport(14); } catch (e) {}
   });
 
-  // PROFESSIONAL TIERED STORAGE CLEANUP
+  // Schedule Self-Healing every 15 minutes
+  cron.schedule('*/15 * * * *', async () => {
+    await runSelfHealingMonitor();
+  });
+
+  // Professional Tiered Maintenance 
   async function runSystemMaintenance(forceAll: boolean = false) {
     console.log(`🧹 Starting Professional Tiered Storage Cleanup (Force: ${forceAll})...`);
     try {
-      // 1. CLEANUP AUDIT LOGS (> 30 days)
-      const logsInterval = forceAll ? '0 days' : '30 days';
-      const deletedLogs = await runExec(pool, `DELETE FROM audit_logs WHERE timestamp < NOW() - INTERVAL '${logsInterval}'`);
+      // 1. CLEANUP AUDIT LOGS (Aggressive technical cleanup: 7 days, Business events: 30 days)
+      // Keep important user actions for 30 days, technical logs for 7
+      const deletedLogs = await runExec(pool, `
+        DELETE FROM audit_logs 
+        WHERE (action LIKE '%API%' OR action LIKE '%Cron%' OR action LIKE '%Health%') AND timestamp < NOW() - INTERVAL '7 days'
+        OR timestamp < NOW() - INTERVAL '30 days'
+      `);
       console.log(`🗑️ Audit logs cleaned: ${deletedLogs.rowCount} rows removed.`);
 
       // 2. OFFLOAD BACKUPS (> 7 days if they are on Drive)
@@ -3238,18 +3254,18 @@ async function startServer() {
     await runAIDataAudit();
   });
 
-  // ⚡ Database Optimizer: Weekly on Saturday at 2 AM
-  cron.schedule('0 2 * * 6', async () => {
+  // ⚡ Database Optimizer: Weekly on Saturday at 1 AM (shifted)
+  cron.schedule('0 1 * * 6', async () => {
     await runDatabaseOptimizer();
   });
 
-  // 📚 Business Historian: Weekly on Sunday at 5 AM
-  cron.schedule('0 5 * * 0', async () => {
+  // 📚 Business Historian: Weekly on Sunday at 4 AM (shifted)
+  cron.schedule('0 4 * * 0', async () => {
     await runDataArchiver();
   });
 
-  // 🩺 Disaster Recovery Drill: Monthly on the 1st at 6 AM
-  cron.schedule('0 6 1 * *', async () => {
+  // 🩺 Disaster Recovery Drill: Monthly on the 1st at 5 AM (shifted)
+  cron.schedule('0 5 1 * *', async () => {
     await runDisasterRecoveryDrill();
   });
 
