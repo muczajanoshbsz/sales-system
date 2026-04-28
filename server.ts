@@ -1391,7 +1391,7 @@ async function startServer() {
       });
 
       if (lowStockAlerts.length > 0) {
-        const admins = await runQuery(pool, 'SELECT id, uid FROM users WHERE role = "admin"');
+        const admins = await runQuery(pool, "SELECT uid FROM users WHERE role = 'admin'");
         for (const admin of admins) {
           await createNotification(
             pool, 
@@ -2758,7 +2758,10 @@ async function startServer() {
     });
     
     const authData = await authRes.json() as any;
-    if (!authData.access_token) throw new Error('Google OAuth hiba');
+    if (!authData.access_token) {
+      console.error('❌ Google OAuth Refresh Error:', authData);
+      throw new Error(`Google OAuth hiba: ${authData.error_description || authData.error || 'Ismeretlen hiba'}`);
+    }
     const accessToken = authData.access_token;
 
     // 2. Calculate Checksum
