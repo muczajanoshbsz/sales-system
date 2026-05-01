@@ -682,22 +682,22 @@ async function startServer() {
     }
 
     try {
-      console.log(`✉️ Attempting to send report email via smtp.gmail.com (STARTTLS)...`);
+      console.log(`✉️ Attempting to send report email via smtp.gmail.com (Forcing Port 465 SSL, IPv4 Only)...`);
       const transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
-        port: 587,
-        secure: false, // STARTTLS
+        port: 465,
+        secure: true,
         auth: {
           user: smtpUser,
           pass: smtpPass,
         },
-        connectionTimeout: 20000,
-        greetingTimeout: 20000,
-        socketTimeout: 30000,
-        family: 4,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+        family: 4, // Absolute IPv4 force
         tls: {
           rejectUnauthorized: false,
-          minVersion: 'TLSv1.2'
+          servername: 'smtp.gmail.com'
         }
       } as any);
 
@@ -900,22 +900,22 @@ async function startServer() {
     }
 
     try {
-      console.log(`✉️ Attempting to send system email via smtp.gmail.com (STARTTLS)...`);
+      console.log(`✉️ Attempting to send system email via smtp.gmail.com (Forcing Port 465 SSL, IPv4 Only)...`);
       const transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
-        port: 587,
-        secure: false, // STARTTLS
+        port: 465,
+        secure: true,
         auth: {
           user: smtpUser,
           pass: smtpPass,
         },
-        connectionTimeout: 20000,
-        greetingTimeout: 20000,
-        socketTimeout: 30000,
-        family: 4,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+        family: 4, // Absolute IPv4 force
         tls: {
           rejectUnauthorized: false,
-          minVersion: 'TLSv1.2'
+          servername: 'smtp.gmail.com'
         }
       } as any);
 
@@ -2470,8 +2470,10 @@ async function startServer() {
         ORDER BY s.created_at DESC 
         LIMIT 200
       `);
+      console.log(`📊 [SESSION_ADMIN] Fetched ${rows.length} sessions from DB`);
       res.json(rows);
     } catch (error) {
+      console.error('❌ [SESSION_ADMIN] Failed to fetch sessions:', error);
       res.status(500).json({ error: (error as Error).message });
     }
   });

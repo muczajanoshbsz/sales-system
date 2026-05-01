@@ -155,10 +155,13 @@ const AdminPanel: React.FC = () => {
     // Polling for background uploads if any backup is in 'uploading' state
     let pollInterval: any;
     if (activeTab === 'backups' && Array.isArray(backups) && backups.some(b => safeParseMetadata(b.metadata).vaultStatus === 'uploading')) {
-       pollInterval = setInterval(fetchData, 5000);
+       pollInterval = setInterval(() => {
+         // Selective fetch to avoid full refresh loading state
+         apiService.getBackups().then(data => setBackups(data)).catch(e => console.error(e));
+       }, 5000);
     }
     return () => { if (pollInterval) clearInterval(pollInterval); };
-  }, [activeTab, backups?.length]); // Added backups.length to re-trigger if list changes
+  }, [activeTab]); // Removed backups?.length to avoid unnecessary triggers
 
   const checkDailyBackup = async () => {
     try {
@@ -244,6 +247,7 @@ const AdminPanel: React.FC = () => {
           break;
         case 'sessions':
           const sessionsData = await apiService.getAdminUserSessions();
+          console.log('DEBUG: Received sessions from API:', sessionsData);
           setUserSessions(sessionsData);
           break;
       }
@@ -1931,6 +1935,14 @@ const AdminPanel: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-1 sm:gap-2 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto custom-scrollbar max-w-full pb-2 sm:pb-1">
+          <button
+            onClick={fetchData}
+            className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all group"
+            title="Adatok frissítése"
+          >
+            <RefreshCw className={cn("w-5 h-5", loading && "animate-spin text-indigo-600")} />
+          </button>
+          <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block"></div>
           <button
             onClick={() => setActiveTab('stats')}
             className={cn(
