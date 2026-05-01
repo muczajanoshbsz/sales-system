@@ -1128,78 +1128,6 @@ async function startServer() {
     }
   }
 
-  // 2. AI DATA GUARD (Automata Adatminőség-figyelő)
-  async function runAIDataAudit() {
-    console.log('🛡️ AI Data Guard starting audit...');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return;
-
-    try {
-      // Get recent data (last 48 hours for buffer)
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 2);
-
-      const [recentSales, recentStock] = await Promise.all([
-        runQuery(pool, 'SELECT * FROM sales WHERE created_at >= ?', [yesterday.toISOString()]),
-        runQuery(pool, 'SELECT * FROM stock WHERE last_updated >= ?', [yesterday.toISOString()])
-      ]);
-
-      if (recentSales.length === 0 && recentStock.length === 0) {
-        console.log('AI Data Guard: No recent data to audit.');
-        return;
-      }
-
-      const prompt = `
-        You are the "AirPods Vault Data Guard". Your goal is to detect data entry errors, anomalies, or missing fields.
-        Analyze the following data entries from the last 48 hours.
-        Look for:
-        1. Pricing anomalies (e.g. sale price way too low or high for the specific model).
-        2. Missing critical info (e.g. empty fields that should be filled).
-        3. Statistical outliers.
-        
-        Recent Sales: ${JSON.stringify(recentSales.map(s => ({ id: s.id, model: s.model, price: s.sell_price, profit: s.profit })))}
-        Recent Stock Updates: ${JSON.stringify(recentStock.map(s => ({ id: s.id, model: s.model, qty: s.quantity })))}
-        
-        If you find issues, return a JSON array of objects:
-        [
-          {
-            "entity_type": "sale" | "stock",
-            "entity_id": string,
-            "issue_type": "anomaly" | "missing_data" | "pricing_error",
-            "severity": "low" | "medium" | "high",
-            "description": "What is wrong in Hungarian",
-            "suggestion": "How to fix it in Hungarian"
-          }
-        ]
-        If no issues are found, return an empty array []. Use natural Hungarian for descriptions.
-      `;
-
-      const auditResults = await callGeminiJSON<any[]>(apiKey, prompt);
-
-      for (const issue of auditResults) {
-        const currentFlags = await runQuery(pool, 'SELECT id FROM data_audit_flags WHERE entity_id = ? AND issue_type = ? AND is_resolved = FALSE', [issue.entity_id, issue.issue_type]);
-        
-        if (currentFlags.length === 0) {
-          await runExec(pool, `
-            INSERT INTO data_audit_flags (entity_type, entity_id, issue_type, severity, description, suggestion)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `, [issue.entity_type, issue.entity_id, issue.issue_type, issue.severity, issue.description, issue.suggestion]);
-
-          if (issue.severity === 'high') {
-             const admins = await runQuery(pool, 'SELECT uid FROM users WHERE role = ?', ['admin']);
-             for (const admin of admins) {
-               await createNotification(pool, admin.uid, 'warning', '🛡️ Adatminőségi Hiba', issue.description);
-             }
-          }
-        }
-      }
-
-      console.log(`✅ AI Data Guard finished. Found ${auditResults.length} issues.`);
-    } catch (err) {
-      console.error('❌ AI Data Guard failed:', err);
-    }
-  }
-
   // 3. SMART INDEXING (Önhangoló Adatbázis)
   async function runDatabaseOptimizer() {
     console.log('⚡ Running Smart Database Optimizer...');
@@ -1304,131 +1232,6 @@ async function startServer() {
         `ARCHIVÁLÁSI HIBA: ${(err as Error).message}`,
         JSON.stringify({ error: (err as Error).message, failedAt: new Date().toISOString() })
       ]);
-    }
-  }
-
-  // PROACTIVE AI BUSINESS AGENT
-  async function runProactiveAIReview() {
-    console.log('🤖 Proactive AI Agent starting review...');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return;
-
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const [todaySales, currentStock, marketPrices] = await Promise.all([
-        runQuery(pool, 'SELECT * FROM sales WHERE date = ?', [today]),
-        runQuery(pool, 'SELECT * FROM stock'),
-        runQuery(pool, 'SELECT * FROM market_prices ORDER BY date DESC LIMIT 50')
-      ]);
-
-      const prompt = `
-        You are the "AirPods Vault AI Manager". Your goal is to optimize profit and operational efficiency.
-        Analyze today's business activity and current stock to provide 1-3 actionable "Daily Tips".
-        
-        Today's Data (${today}):
-        - Sales: ${JSON.stringify(todaySales)}
-        - Current Stock: ${JSON.stringify(currentStock)}
-        - Recent Market Benchmarks: ${JSON.stringify(marketPrices)}
-        
-        Focus on:
-        1. Pricing Anomalies (sold too cheap? too expensive?)
-        2. Slow Moving Inventory (items in stock > 7 days without sales)
-        3. Profit Opportunities.
-        
-        Format your response as a JSON array of objects:
-        [
-          { "type": "pricing" | "stock" | "general", "content": "The specific advice in Hungarian" }
-        ]
-        Limit to 1-3 most important tips. Use natural Hungarian.
-      `;
-
-      const tips = await callGeminiJSON<any[]>(apiKey, prompt);
-
-      for (const tip of tips) {
-        await runExec(pool, 'INSERT INTO ai_tips (type, content, metadata) VALUES (?, ?, ?)', [
-          tip.type,
-          tip.content,
-          JSON.stringify({ date: today })
-        ]);
-
-        // Push notification to admins
-        const users = await runQuery(pool, 'SELECT uid FROM users WHERE role = ?', ['admin']);
-        for (const admin of users) {
-          await createNotification(
-            pool,
-            admin.uid,
-            'info',
-            '🤖 AI Üzleti Tipp',
-            tip.content
-          );
-        }
-      }
-
-      console.log(`✅ Proactive AI Agent finished. Generated ${tips.length} tips.`);
-    } catch (err) {
-      console.error('❌ Proactive AI Agent failed:', err);
-    }
-  }
-
-  // INTELLIGENT STOCK PREDICTIONS
-  async function runStockPredictions() {
-    console.log('📈 Running Intelligent Stock Predictions...');
-    try {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-      const [recentSales, stock] = await Promise.all([
-        runQuery(pool, 'SELECT model, quantity FROM sales WHERE created_at >= ?', [thirtyDaysAgo.toISOString()]),
-        runQuery(pool, 'SELECT * FROM stock')
-      ]);
-
-      // Calculate daily burn rate
-      const salesVolume: Record<string, number> = {};
-      recentSales.forEach(s => {
-        salesVolume[s.model] = (salesVolume[s.model] || 0) + Number(s.quantity);
-      });
-
-      const burnRates: Record<string, number> = {};
-      Object.entries(salesVolume).forEach(([model, total]) => {
-        burnRates[model] = total / 30; // Average per day
-      });
-
-      const lowStockAlerts: string[] = [];
-
-      stock.forEach(item => {
-        const rate = burnRates[item.model];
-        if (rate && rate > 0) {
-          const daysLeft = Number(item.quantity) / rate;
-          if (daysLeft <= 4) {
-            lowStockAlerts.push(`<b>${item.model}</b>: Kb. <b>${Math.ceil(daysLeft)} nap</b> múlva elfogy! (Átlag napi eladás: ${rate.toFixed(1)} db)`);
-          }
-        } else if (Number(item.quantity) <= 2) {
-          lowStockAlerts.push(`<b>${item.model}</b>: Kritikus készlet! Csak <b>${item.quantity} db</b> maradt.`);
-        }
-      });
-
-      if (lowStockAlerts.length > 0) {
-        const admins = await runQuery(pool, "SELECT uid FROM users WHERE role = 'admin'");
-        for (const admin of admins) {
-          await createNotification(
-            pool, 
-            admin.uid, 
-            'warning', 
-            '📈 Készlet Előrejelzés', 
-            `Várható készlethiány észlelet: ${lowStockAlerts.join('; ')}`
-          );
-        }
-
-        await sendSystemEmail(
-          'Készlet Előrejelzési Jelentés',
-          '📈 Várható Készlethiányok',
-          `Az algoritmus a következő modelleknél jelzett előre kifogyást:<br><br><ul>${lowStockAlerts.map(a => `<li>${a}</li>`).join('')}</ul><br>Érdemes elindítani a beszerzést!`
-        );
-      }
-
-      console.log('✅ Stock predictions completed.');
-    } catch (err) {
-      console.error('❌ Stock predictions failed:', err);
     }
   }
 
@@ -3106,24 +2909,6 @@ async function startServer() {
     }
   });
 
-  adminRouter.get('/ai/tips', async (req, res) => {
-    try {
-      const rows = await runQuery(pool, 'SELECT * FROM ai_tips ORDER BY created_at DESC LIMIT 20');
-      res.json(rows);
-    } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
-    }
-  });
-
-  adminRouter.get('/ai/audit-flags', async (req, res) => {
-    try {
-      const rows = await runQuery(pool, 'SELECT * FROM data_audit_flags ORDER BY created_at DESC LIMIT 50');
-      res.json(rows);
-    } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
-    }
-  });
-
   adminRouter.get('/ai/health-checks', async (req, res) => {
     try {
       const rows = await runQuery(pool, 'SELECT * FROM system_health_checks ORDER BY created_at DESC LIMIT 50');
@@ -3145,15 +2930,6 @@ async function startServer() {
   adminRouter.post('/ai/trigger-drill', async (req, res) => {
     try {
       await runDisasterRecoveryDrill();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
-    }
-  });
-
-  adminRouter.post('/ai/trigger-audit', async (req, res) => {
-    try {
-      await runAIDataAudit();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -3259,9 +3035,6 @@ async function startServer() {
         }
       );
 
-      // 5. Run Predictions
-      await runStockPredictions();
-
     } catch (error) {
       console.error('❌ Consolidated maintenance failed:', error);
       await sendSystemEmail(
@@ -3361,17 +3134,11 @@ async function startServer() {
   // Runs every day at 4 AM (after the 3 AM backup)
   cron.schedule('0 4 * * *', async () => {
     await runSystemMaintenance(false);
-    await runStockPredictions();
   });
 
   // Schedule Self-Healing every 15 minutes
   cron.schedule('*/15 * * * *', async () => {
     await runSelfHealingMonitor();
-  });
-
-  // 🛡️ AI Data Guard: Daily at 1 AM (after snapshot)
-  cron.schedule('0 1 * * *', async () => {
-    await runAIDataAudit();
   });
 
   // ⚡ Database Optimizer: Weekly on Saturday at 1 AM (shifted)
@@ -3541,11 +3308,14 @@ async function startServer() {
     }
   });
 
-  // Lazy Cron: Check for daily backup on every request
+  // Lazy Cron: Check for automated tasks on every request
   let lastAutoBackupCheck = 0;
+  let lastRecoveryDrillCheck = 0;
+
   apiRouter.use(async (req, res, next) => {
     const now = Date.now();
-    // Check every 15 minutes
+    
+    // 1. Daily Backup Check (every 15 mins check)
     if (now - lastAutoBackupCheck > 15 * 60 * 1000) {
       lastAutoBackupCheck = now;
       const today = new Date();
@@ -3561,10 +3331,25 @@ async function startServer() {
             await createBackup('auto');
           }
         } catch (error) {
-          console.error('Lazy Cron failed:', error);
+          console.error('Lazy Cron (Backup) failed:', error);
         }
       }
     }
+
+    // 2. Recovery Drill (once a week - approx checking every 24h if it was done in last 7 days)
+    if (now - lastRecoveryDrillCheck > 24 * 60 * 60 * 1000) {
+      lastRecoveryDrillCheck = now;
+      try {
+        const lastDrill = await runQuery(pool, "SELECT created_at FROM system_health_checks WHERE type = 'drill' ORDER BY created_at DESC LIMIT 1");
+        const aWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        if (lastDrill.length === 0 || new Date(lastDrill[0].created_at) < aWeekAgo) {
+          runDisasterRecoveryDrill().catch(err => console.error('Lazy Cron (Recovery Drill) failed:', err));
+        }
+      } catch (e) {
+        console.error('Lazy Cron (Drill Check) failed:', e);
+      }
+    }
+
     next();
   });
 
