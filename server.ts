@@ -109,6 +109,25 @@ async function createNotification(pool: pg.Pool, userId: string, type: 'success'
   }
 }
 
+// Security & Hygiene Helpers
+async function recordFailedAttempt(pool: pg.Pool, ip: string, username?: string) {
+  try {
+    await runExec(pool, 'INSERT INTO failed_login_attempts (ip_address, username) VALUES (?, ?)', [ip, username || 'anonymous']);
+  } catch (e) {
+    console.error('Failed to record failed attempt:', e);
+  }
+}
+
+async function isIpBlacklisted(pool: pg.Pool, ip: string): Promise<boolean> {
+  try {
+    const rows = await runQuery(pool, 'SELECT id FROM blacklisted_ips WHERE ip_address = ? AND expires_at > NOW()', [ip]);
+    return rows.length > 0;
+  } catch (e) {
+    console.error('IP check failed:', e);
+    return false;
+  }
+}
+
 async function bulkInsert(
   client: pg.PoolClient,
   tableName: string,
@@ -249,6 +268,8 @@ async function startServer() {
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 15000,
   });
+
+  (global as any).pool = pool;
 
   ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
@@ -867,6 +888,119 @@ async function startServer() {
     }
   }
 
+  async function runSecurityReview() {
+    console.log('🛡️ Security Guard: Reviewing logs for suspicious activity...');
+    const pool = (global as any).pool;
+    if (!pool) return;
+
+    try {
+      // 1. Unblock expired
+      const unblocked = await runExec(pool, 'DELETE FROM blacklisted_ips WHERE expires_at <= NOW()');
+      if (unblocked.rowCount && unblocked.rowCount > 0) {
+        console.log(`🔓 Security Guard: Released ${unblocked.rowCount} expired IP blocks.`);
+      }
+
+      // 2. Detect Brute Force
+      // Threshold: >10 attempts within 5 minutes
+      const suspiciousIps = await runQuery(pool, `
+        SELECT ip_address, COUNT(*) as attempt_count, MAX(username) as last_username
+        FROM failed_login_attempts
+        WHERE attempted_at > NOW() - INTERVAL '5 minutes'
+        GROUP BY ip_address
+        HAVING COUNT(*) > 10
+      `);
+
+      for (const row of suspiciousIps) {
+        const alreadyBanned = await isIpBlacklisted(pool, row.ip_address);
+        if (!alreadyBanned) {
+          const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour ban
+          await runExec(pool, 'INSERT INTO blacklisted_ips (ip_address, reason, expires_at) VALUES (?, ?, ?)', [
+            row.ip_address,
+            `Brute force detected: ${row.attempt_count} failures in 5 mins. Last user: ${row.last_username}`,
+            expiresAt
+          ]);
+
+          console.log(`🚫 Security Guard: IP ${row.ip_address} BLOCKED for 1 hour.`);
+
+          // Notify admins
+          const admins = await runQuery(pool, "SELECT uid, email FROM users WHERE role = 'admin'");
+          for (const admin of admins) {
+            await createNotification(
+              pool, 
+              admin.uid, 
+              'warning', 
+              '🚨 Biztonsági Blokkolás', 
+              `A rendszer automatikusan kitiltotta a(z) ${row.ip_address} IP-címet brute force gyanúja miatt (${row.attempt_count} sikertelen próbálkozás).`
+            );
+          }
+
+          await sendSystemEmail(
+            'BIZTONSÁGI RIASZTÁS: IP Tiltva',
+            '🚨 Automatikus IP Blokkolás',
+            `Gyanús tevékenység észlelve! A rendszer 1 órára kizárta a következő IP-címet: <b>${row.ip_address}</b>.<br><br>Ok: Brute-force támadás gyanúja (${row.attempt_count} sikertelen próbálkozás rövid időn belül).`
+          );
+        }
+      }
+    } catch (err) {
+      console.error('❌ Security Review failed:', err);
+    }
+  }
+
+  async function runDatabaseHygiene() {
+    console.log('🧹 Database Hygiene: Cleaning up old data...');
+    const pool = (global as any).pool;
+    if (!pool) return;
+
+    try {
+      // 1. Notifications cleanup
+      // Read notifications > 30 days
+      const cleanRead = await runExec(pool, "DELETE FROM notifications WHERE is_read = TRUE AND created_at < NOW() - INTERVAL '30 days'");
+      // Unread notifications > 90 days
+      const cleanUnread = await runExec(pool, "DELETE FROM notifications WHERE is_read = FALSE AND created_at < NOW() - INTERVAL '90 days'");
+
+      // 2. Activity Logs (Audit Logs) cleaning/archiving
+      // Delete logs older than 6 months
+      const cleanLogs = await runExec(pool, "DELETE FROM audit_logs WHERE timestamp < NOW() - INTERVAL '6 months'");
+
+      // 3. Expired Sessions (if using a session table, otherwise skip)
+      // Assuming if you had sessions, you'd clean them here.
+
+      // 4. Failed login attempts cleanup (> 7 days)
+      const cleanFailed = await runExec(pool, "DELETE FROM failed_login_attempts WHERE attempted_at < NOW() - INTERVAL '7 days'");
+
+      console.log(`✅ Hygiene complete: Removed ${cleanRead.rowCount} read/ ${cleanUnread.rowCount} unread notifications and ${cleanLogs.rowCount} old audit records.`);
+    } catch (err) {
+      console.error('❌ Database Hygiene failed:', err);
+    }
+  }
+
+  async function runFileSystemCleanup() {
+    console.log('📂 File System Cleanup: Removing old temporary files...');
+    try {
+      const publicDir = path.join(process.cwd(), 'public');
+      const exportsDir = path.join(publicDir, 'exports'); // Assuming exports are here
+      
+      if (fs.existsSync(exportsDir)) {
+        const files = fs.readdirSync(exportsDir);
+        const now = Date.now();
+        const maxAge = 14 * 24 * 60 * 60 * 1000; // 14 days
+
+        let deletedCount = 0;
+        files.forEach(file => {
+          const filePath = path.join(exportsDir, file);
+          const stats = fs.statSync(filePath);
+          if (now - stats.mtimeMs > maxAge) {
+            fs.unlinkSync(filePath);
+            deletedCount++;
+          }
+        });
+        console.log(`✅ File Cleanup complete: Deleted ${deletedCount} old export files.`);
+      }
+    } catch (err) {
+      console.warn('⚠️ File System Cleanup failed (directory may not exist):', (err as Error).message);
+    }
+  }
+
   async function generateAndSendReport(daysBefore: number = 14) {
     console.log(`Generating report for the last ${daysBefore} days...`);
     const apiKey = process.env.GEMINI_API_KEY;
@@ -1324,7 +1458,18 @@ async function startServer() {
   const checkAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = (req as any).user;
     if (user.role !== 'admin') {
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+      recordFailedAttempt(pool, String(ip), user.email || 'guest-admin-probe');
       return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+  };
+
+  const checkIpBlacklist = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const isBlacklisted = await isIpBlacklisted(pool, String(ip));
+    if (isBlacklisted) {
+      return res.status(403).send('🛡️ Access Denied: Your IP is temporarily blocked due to suspicious activity.');
     }
     next();
   };
@@ -1349,6 +1494,7 @@ async function startServer() {
   });
 
   const apiRouter = express.Router();
+  apiRouter.use(checkIpBlacklist);
   apiRouter.use(getUserContext);
 
   // --- Ghost Mode for Backups (Time Travel) ---
@@ -1465,13 +1611,17 @@ async function startServer() {
     try {
       const { uid, email: rawEmail, displayName } = req.body;
       const email = rawEmail?.toLowerCase();
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
       if (!uid || !email) {
+        recordFailedAttempt(pool, String(ip), 'incomplete-sync-payload');
         return res.status(400).json({ error: 'Missing uid or email' });
       }
 
       const existing = await runQuery(pool, 'SELECT * FROM users WHERE uid = ?', [uid]);
 
       if (existing.length > 0 && existing[0].is_suspended) {
+        recordFailedAttempt(pool, String(ip), email || 'suspended-user');
         return res.status(403).json({ error: 'Account suspended' });
       }
 
@@ -3050,18 +3200,23 @@ async function startServer() {
   // Consolidated Daily Job at 2:00 AM
   cron.schedule('0 2 * * *', async () => {
     await runConsolidatedDailyMaintenance();
+    await runDatabaseHygiene(); // New professional hygiene
+    await runFileSystemCleanup();
+  });
+
+  // Security Review every 10 minutes (redundant to Lazy Cron but good for safety)
+  cron.schedule('*/10 * * * *', async () => {
+    await runSecurityReview();
   });
 
   // Professional Tiered Maintenance 
   async function runSystemMaintenance(forceAll: boolean = false) {
     console.log(`🧹 Starting Professional Tiered Storage Cleanup (Force: ${forceAll})...`);
     try {
-      // 1. CLEANUP AUDIT LOGS (Aggressive technical cleanup: 7 days, Business events: 30 days)
-      // Keep important user actions for 30 days, technical logs for 7
+      // 1. CLEANUP AUDIT LOGS (User requested: 6 months for history)
       const deletedLogs = await runExec(pool, `
         DELETE FROM audit_logs 
-        WHERE (action LIKE '%API%' OR action LIKE '%Cron%' OR action LIKE '%Health%') AND timestamp < NOW() - INTERVAL '7 days'
-        OR timestamp < NOW() - INTERVAL '30 days'
+        WHERE timestamp < NOW() - INTERVAL '6 months'
       `);
       console.log(`🗑️ Audit logs cleaned: ${deletedLogs.rowCount} rows removed.`);
 
@@ -3311,6 +3466,8 @@ async function startServer() {
   // Lazy Cron: Check for automated tasks on every request
   let lastAutoBackupCheck = 0;
   let lastRecoveryDrillCheck = 0;
+  let lastSecurityReviewCheck = 0;
+  let lastHygieneCheck = 0;
 
   apiRouter.use(async (req, res, next) => {
     const now = Date.now();
@@ -3336,7 +3493,7 @@ async function startServer() {
       }
     }
 
-    // 2. Recovery Drill (once a week - approx checking every 24h if it was done in last 7 days)
+    // 2. Recovery Drill (once a week)
     if (now - lastRecoveryDrillCheck > 24 * 60 * 60 * 1000) {
       lastRecoveryDrillCheck = now;
       try {
@@ -3348,6 +3505,19 @@ async function startServer() {
       } catch (e) {
         console.error('Lazy Cron (Drill Check) failed:', e);
       }
+    }
+
+    // 3. Security Review (every 5 mins)
+    if (now - lastSecurityReviewCheck > 5 * 60 * 1000) {
+      lastSecurityReviewCheck = now;
+      runSecurityReview().catch(err => console.error('Lazy Cron (Security Review) failed:', err));
+    }
+
+    // 4. Database Hygiene (daily - every 24h)
+    if (now - lastHygieneCheck > 24 * 60 * 60 * 1000) {
+      lastHygieneCheck = now;
+      runDatabaseHygiene().catch(err => console.error('Lazy Cron (Hygiene) failed:', err));
+      runFileSystemCleanup().catch(err => console.error('Lazy Cron (FS Cleanup) failed:', err));
     }
 
     next();
