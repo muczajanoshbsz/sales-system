@@ -606,6 +606,9 @@ async function startServer() {
           user: smtpUser,
           pass: smtpPass,
         },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
       });
 
       // Generate PDF
@@ -815,6 +818,9 @@ async function startServer() {
           user: smtpUser,
           pass: smtpPass,
         },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
       });
 
       let detailsHtml = '';
@@ -977,11 +983,8 @@ async function startServer() {
     try {
       // 1. Check DB Connection
       await pool.query('SELECT 1');
-      console.log('✅ Health: DB Connection OK');
     } catch (dbErr) {
       console.error('❌ Health: DB Connection Failed!', dbErr);
-      // In a real serverless env, we might not be able to "fix" this ourselves easily
-      // but we log it and it will trigger an alert if repeated.
     }
 
     try {
@@ -1041,9 +1044,15 @@ async function startServer() {
   async function runDisasterRecoveryDrill() {
     console.log('🩺 Running automated Disaster Recovery Drill...');
     try {
-      const latestBackups = await runQuery(pool, 'SELECT * FROM backups ORDER BY created_at DESC LIMIT 1');
+      // Find the latest backup that HAS data (either in DB or on disk)
+      const latestBackups = await runQuery(pool, 'SELECT * FROM backups WHERE data IS NOT NULL ORDER BY created_at DESC LIMIT 1');
       if (latestBackups.length === 0) {
-        throw new Error('No backups found to test.');
+        // Fallback to latest overall and hope it's on disk
+        const fallbackBackups = await runQuery(pool, 'SELECT * FROM backups ORDER BY created_at DESC LIMIT 1');
+        if (fallbackBackups.length === 0) {
+          throw new Error('No backups found to test.');
+        }
+        latestBackups.push(fallbackBackups[0]);
       }
 
       const backup = latestBackups[0];
@@ -3260,27 +3269,6 @@ async function startServer() {
   // Consolidated Daily Job at 2:00 AM
   cron.schedule('0 2 * * *', async () => {
     await runConsolidatedDailyMaintenance();
-  });
-
-  // Schedule AI Data Guard: Daily at 1 AM
-  cron.schedule('0 1 * * *', async () => {
-    await runAIDataAudit();
-  });
-
-  // Schedule Proactive AI Review: Daily at 11 PM
-  cron.schedule('0 23 * * *', async () => {
-    await runProactiveAIReview();
-  });
-
-  // Schedule Weekly Report: Sunday at 8 PM
-  cron.schedule('0 20 * * 0', async () => {
-    console.log('Generating Scheduled Business Report...');
-    try { await generateAndSendReport(14); } catch (e) {}
-  });
-
-  // Schedule Self-Healing every 15 minutes
-  cron.schedule('*/15 * * * *', async () => {
-    await runSelfHealingMonitor();
   });
 
   // Professional Tiered Maintenance 
