@@ -138,18 +138,17 @@ async function isIpBlacklisted(pool: pg.Pool, ip: string): Promise<boolean> {
 }
 
 async function recordUserSession(pool: pg.Pool, userId: string, ip: string, userAgentStr: string) {
+  console.log(`🔍 [SESSION_GUARD] Attempting to record session for ${userId} from IP ${ip}`);
   try {
     const parser = new UAParser(userAgentStr);
     const ua = parser.getResult();
 
-    // Try Geo-IP fetch (Free tier of ip-api.com)
-    let geo = { city: 'Local', region: 'Internal', country: 'Private Network', countryCode: 'UN' };
-    
-    // Only fetch if it's not a local/private IP
+    let geo = { city: 'Helyi', region: 'Belső', country: 'Magán hálózat', countryCode: 'HU' };
     const isLocal = ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('::ffff:127.');
     
-    if (!isLocal) {
+    if (!isLocal && ip !== '0.0.0.0') {
       try {
+        console.log(`🌐 [SESSION_GUARD] Fetching Geo-IP for ${ip}...`);
         const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,regionName,city`);
         const geoData = await geoRes.json() as any;
         if (geoData.status === 'success') {
@@ -159,14 +158,14 @@ async function recordUserSession(pool: pg.Pool, userId: string, ip: string, user
             country: geoData.country || 'Unknown',
             countryCode: geoData.countryCode || 'XX'
           };
+          console.log(`📍 [SESSION_GUARD] Location found: ${geo.city}, ${geo.country}`);
         }
       } catch (geoErr) {
-        console.warn(`Geo-IP fetch failed for ${ip}:`, (geoErr as Error).message);
+        console.warn(`⚠️ [SESSION_GUARD] Geo-IP fetch failed (Continuing anyway):`, (geoErr as Error).message);
       }
     }
 
-    // Insert session
-    await runExec(pool, `
+    const result = await runExec(pool, `
       INSERT INTO user_sessions (
         "userId", ip_address, user_agent, 
         browser_name, browser_version, 
@@ -182,9 +181,13 @@ async function recordUserSession(pool: pg.Pool, userId: string, ip: string, user
       geo.city, geo.region, geo.country, geo.countryCode
     ]);
 
-    console.log(`✅ Session recorded for ${userId} from ${ip}`);
+    if (result.rowCount && result.rowCount > 0) {
+      console.log(`✅ [SESSION_GUARD] Session successfully logged to DB for ${userId}`);
+    } else {
+      console.warn(`⚠️ [SESSION_GUARD] DB insert executed but rowCount is 0 for ${userId}`);
+    }
   } catch (err) {
-    console.error('Failed to record user session:', err);
+    console.error('❌ [SESSION_GUARD] CRITICAL ERROR during session recording:', err);
   }
 }
 
@@ -679,19 +682,19 @@ async function startServer() {
     }
 
     try {
-      console.log(`✉️ Attempting to send report email via ${smtpHost}:${smtpPort}...`);
+      console.log(`✉️ Attempting to send report email via ${smtpHost}:465 (SSL Forced)...`);
       const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
           user: smtpUser,
           pass: smtpPass,
         },
-        connectionTimeout: 30000,
-        greetingTimeout: 30000,
-        socketTimeout: 45000,
-        family: 4, // Force IPv4
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+        family: 4,
         tls: {
           rejectUnauthorized: false
         }
@@ -896,19 +899,19 @@ async function startServer() {
     }
 
     try {
-      console.log(`✉️ Attempting to send system email via ${smtpHost}:${smtpPort}...`);
+      console.log(`✉️ Attempting to send system email via ${smtpHost}:465 (SSL Forced)...`);
       const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
           user: smtpUser,
           pass: smtpPass,
         },
-        connectionTimeout: 30000,
-        greetingTimeout: 30000,
-        socketTimeout: 45000,
-        family: 4, // Force IPv4
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+        family: 4,
         tls: {
           rejectUnauthorized: false
         }
@@ -4003,3 +4006,4 @@ startServer().catch((error) => {
   console.error('❌ Fatal startup error:', error);
   process.exit(1);
 });
+
