@@ -682,21 +682,22 @@ async function startServer() {
     }
 
     try {
-      console.log(`✉️ Attempting to send report email via ${smtpHost}:465 (SSL Forced)...`);
+      console.log(`✉️ Attempting to send report email via smtp.gmail.com (STARTTLS)...`);
       const transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
+        port: 587,
+        secure: false, // STARTTLS
         auth: {
           user: smtpUser,
           pass: smtpPass,
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
+        connectionTimeout: 20000,
+        greetingTimeout: 20000,
+        socketTimeout: 30000,
         family: 4,
         tls: {
-          rejectUnauthorized: false
+          rejectUnauthorized: false,
+          minVersion: 'TLSv1.2'
         }
       } as any);
 
@@ -899,21 +900,22 @@ async function startServer() {
     }
 
     try {
-      console.log(`✉️ Attempting to send system email via ${smtpHost}:465 (SSL Forced)...`);
+      console.log(`✉️ Attempting to send system email via smtp.gmail.com (STARTTLS)...`);
       const transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
+        port: 587,
+        secure: false, // STARTTLS
         auth: {
           user: smtpUser,
           pass: smtpPass,
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
+        connectionTimeout: 20000,
+        greetingTimeout: 20000,
+        socketTimeout: 30000,
         family: 4,
         tls: {
-          rejectUnauthorized: false
+          rejectUnauthorized: false,
+          minVersion: 'TLSv1.2'
         }
       } as any);
 
@@ -4006,4 +4008,3 @@ startServer().catch((error) => {
   console.error('❌ Fatal startup error:', error);
   process.exit(1);
 });
-

@@ -262,6 +262,7 @@ const AdminPanel: React.FC = () => {
       if (activeTab === 'logs') return logs;
       if (activeTab === 'catalog') return catalogModels;
       if (activeTab === 'backups') return backups;
+      if (activeTab === 'sessions') return userSessions;
       return [];
     }
     
