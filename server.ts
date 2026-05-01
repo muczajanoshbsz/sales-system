@@ -111,6 +111,14 @@ async function createNotification(pool: pg.Pool, userId: string, type: 'success'
 }
 
 // Security & Hygiene Helpers
+function getClientIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket.remoteAddress || '0.0.0.0';
+}
+
 async function recordFailedAttempt(pool: pg.Pool, ip: string, username?: string) {
   try {
     await runExec(pool, 'INSERT INTO failed_login_attempts (ip_address, username) VALUES (?, ?)', [ip, username || 'anonymous']);
@@ -135,21 +143,26 @@ async function recordUserSession(pool: pg.Pool, userId: string, ip: string, user
     const ua = parser.getResult();
 
     // Try Geo-IP fetch (Free tier of ip-api.com)
-    let geo = { city: 'Unknown', region: 'Unknown', country: 'Unknown', countryCode: 'XX' };
-    try {
-      // Use node-fetch style with global fetch (Node 18+)
-      const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,regionName,city`);
-      const geoData = await geoRes.json() as any;
-      if (geoData.status === 'success') {
-        geo = {
-          city: geoData.city || 'Unknown',
-          region: geoData.regionName || 'Unknown',
-          country: geoData.country || 'Unknown',
-          countryCode: geoData.countryCode || 'XX'
-        };
+    let geo = { city: 'Local', region: 'Internal', country: 'Private Network', countryCode: 'UN' };
+    
+    // Only fetch if it's not a local/private IP
+    const isLocal = ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('::ffff:127.');
+    
+    if (!isLocal) {
+      try {
+        const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,regionName,city`);
+        const geoData = await geoRes.json() as any;
+        if (geoData.status === 'success') {
+          geo = {
+            city: geoData.city || 'Unknown',
+            region: geoData.regionName || 'Unknown',
+            country: geoData.country || 'Unknown',
+            countryCode: geoData.countryCode || 'XX'
+          };
+        }
+      } catch (geoErr) {
+        console.warn(`Geo-IP fetch failed for ${ip}:`, (geoErr as Error).message);
       }
-    } catch (geoErr) {
-      console.warn(`Geo-IP fetch failed for ${ip}:`, (geoErr as Error).message);
     }
 
     // Insert session
@@ -169,6 +182,7 @@ async function recordUserSession(pool: pg.Pool, userId: string, ip: string, user
       geo.city, geo.region, geo.country, geo.countryCode
     ]);
 
+    console.log(`✅ Session recorded for ${userId} from ${ip}`);
   } catch (err) {
     console.error('Failed to record user session:', err);
   }
@@ -677,10 +691,11 @@ async function startServer() {
         connectionTimeout: 30000,
         greetingTimeout: 30000,
         socketTimeout: 45000,
+        family: 4, // Force IPv4
         tls: {
           rejectUnauthorized: false
         }
-      });
+      } as any);
 
       // Generate PDF
       const doc = new jsPDF();
@@ -893,10 +908,11 @@ async function startServer() {
         connectionTimeout: 30000,
         greetingTimeout: 30000,
         socketTimeout: 45000,
+        family: 4, // Force IPv4
         tls: {
           rejectUnauthorized: false
         }
-      });
+      } as any);
 
       let detailsHtml = '';
       if (details) {
@@ -1504,16 +1520,16 @@ async function startServer() {
   const checkAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const user = (req as any).user;
     if (user.role !== 'admin') {
-      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-      recordFailedAttempt(pool, String(ip), user.email || 'guest-admin-probe');
+      const ip = getClientIp(req);
+      recordFailedAttempt(pool, ip, user.email || 'guest-admin-probe');
       return res.status(403).json({ error: 'Admin access required' });
     }
     next();
   };
 
   const checkIpBlacklist = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const isBlacklisted = await isIpBlacklisted(pool, String(ip));
+    const ip = getClientIp(req);
+    const isBlacklisted = await isIpBlacklisted(pool, ip);
     if (isBlacklisted) {
       return res.status(403).send('🛡️ Access Denied: Your IP is temporarily blocked due to suspicious activity.');
     }
@@ -1657,22 +1673,22 @@ async function startServer() {
     try {
       const { uid, email: rawEmail, displayName } = req.body;
       const email = rawEmail?.toLowerCase();
-      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+      const ip = getClientIp(req);
 
       if (!uid || !email) {
-        recordFailedAttempt(pool, String(ip), 'incomplete-sync-payload');
+        recordFailedAttempt(pool, ip, 'incomplete-sync-payload');
         return res.status(400).json({ error: 'Missing uid or email' });
       }
 
       const existing = await runQuery(pool, 'SELECT * FROM users WHERE uid = ?', [uid]);
 
       if (existing.length > 0 && existing[0].is_suspended) {
-        recordFailedAttempt(pool, String(ip), email || 'suspended-user');
+        recordFailedAttempt(pool, ip, email || 'suspended-user');
         return res.status(403).json({ error: 'Account suspended' });
       }
 
       // Record successful session
-      recordUserSession(pool, uid, String(ip), req.headers['user-agent'] || '');
+      recordUserSession(pool, uid, ip, req.headers['user-agent'] || '');
 
       if (existing.length === 0) {
         const countRows = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM users');
@@ -2445,7 +2461,7 @@ async function startServer() {
       const rows = await runQuery(pool, `
         SELECT s.*, u.email, u."displayName" 
         FROM user_sessions s
-        JOIN users u ON s."userId" = u.uid
+        LEFT JOIN users u ON s."userId" = u.uid
         ORDER BY s.created_at DESC 
         LIMIT 200
       `);
