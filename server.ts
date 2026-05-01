@@ -598,6 +598,7 @@ async function startServer() {
     }
 
     try {
+      console.log(`✉️ Attempting to send report email via ${smtpHost}:${smtpPort}...`);
       const transporter = nodemailer.createTransport({
         host: smtpHost,
         port: smtpPort,
@@ -606,9 +607,12 @@ async function startServer() {
           user: smtpUser,
           pass: smtpPass,
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 45000,
+        tls: {
+          rejectUnauthorized: false
+        }
       });
 
       // Generate PDF
@@ -810,6 +814,7 @@ async function startServer() {
     }
 
     try {
+      console.log(`✉️ Attempting to send system email via ${smtpHost}:${smtpPort}...`);
       const transporter = nodemailer.createTransport({
         host: smtpHost,
         port: smtpPort,
@@ -818,9 +823,12 @@ async function startServer() {
           user: smtpUser,
           pass: smtpPass,
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 45000,
+        tls: {
+          rejectUnauthorized: false
+        }
       });
 
       let detailsHtml = '';
