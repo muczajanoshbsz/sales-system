@@ -14,6 +14,7 @@ import { jsPDF } from 'jspdf';
 import { GoogleGenAI } from "@google/genai";
 import AdmZip from 'adm-zip';
 import jwt from 'jsonwebtoken';
+import { UAParser } from 'ua-parser-js';
 
 dotenv.config();
 
@@ -125,6 +126,51 @@ async function isIpBlacklisted(pool: pg.Pool, ip: string): Promise<boolean> {
   } catch (e) {
     console.error('IP check failed:', e);
     return false;
+  }
+}
+
+async function recordUserSession(pool: pg.Pool, userId: string, ip: string, userAgentStr: string) {
+  try {
+    const parser = new UAParser(userAgentStr);
+    const ua = parser.getResult();
+
+    // Try Geo-IP fetch (Free tier of ip-api.com)
+    let geo = { city: 'Unknown', region: 'Unknown', country: 'Unknown', countryCode: 'XX' };
+    try {
+      // Use node-fetch style with global fetch (Node 18+)
+      const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,regionName,city`);
+      const geoData = await geoRes.json() as any;
+      if (geoData.status === 'success') {
+        geo = {
+          city: geoData.city || 'Unknown',
+          region: geoData.regionName || 'Unknown',
+          country: geoData.country || 'Unknown',
+          countryCode: geoData.countryCode || 'XX'
+        };
+      }
+    } catch (geoErr) {
+      console.warn(`Geo-IP fetch failed for ${ip}:`, (geoErr as Error).message);
+    }
+
+    // Insert session
+    await runExec(pool, `
+      INSERT INTO user_sessions (
+        "userId", ip_address, user_agent, 
+        browser_name, browser_version, 
+        os_name, os_version, 
+        device_model, device_type, device_vendor,
+        city, region, country, country_code
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      userId, ip, userAgentStr,
+      ua.browser.name || 'Unknown', ua.browser.version || 'Unknown',
+      ua.os.name || 'Unknown', ua.os.version || 'Unknown',
+      ua.device.model || 'Unknown', ua.device.type || 'desktop', ua.device.vendor || 'Unknown',
+      geo.city, geo.region, geo.country, geo.countryCode
+    ]);
+
+  } catch (err) {
+    console.error('Failed to record user session:', err);
   }
 }
 
@@ -1625,6 +1671,9 @@ async function startServer() {
         return res.status(403).json({ error: 'Account suspended' });
       }
 
+      // Record successful session
+      recordUserSession(pool, uid, String(ip), req.headers['user-agent'] || '');
+
       if (existing.length === 0) {
         const countRows = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM users');
         const role = Number(countRows[0].count) === 0 || email === 'csmucza@gmail.com' ? 'admin' : 'client';
@@ -2385,6 +2434,21 @@ async function startServer() {
   adminRouter.get('/users', async (_req, res) => {
     try {
       const rows = await runQuery(pool, 'SELECT * FROM users ORDER BY created_at DESC');
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.get('/user-sessions', async (_req, res) => {
+    try {
+      const rows = await runQuery(pool, `
+        SELECT s.*, u.email, u."displayName" 
+        FROM user_sessions s
+        JOIN users u ON s."userId" = u.uid
+        ORDER BY s.created_at DESC 
+        LIMIT 200
+      `);
       res.json(rows);
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });

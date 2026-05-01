@@ -54,7 +54,13 @@ import {
   TrendingUp as TrendingUpIcon,
   Info,
   Zap,
-  AlertCircle
+  AlertCircle,
+  Monitor,
+  Smartphone,
+  Tablet,
+  Globe,
+  MapPin,
+  Cpu
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { sessionChannel } from './SessionMonitor';
@@ -68,7 +74,7 @@ import { ProductModel } from '../types';
 
 import { GhostModeModal } from './GhostModeModal';
 
-type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups' | 'diagnostics' | 'reports' | 'intelligence';
+type Tab = 'stats' | 'users' | 'sales' | 'stock' | 'catalog' | 'logs' | 'backups' | 'diagnostics' | 'reports' | 'intelligence' | 'sessions';
 
 const AdminPanel: React.FC = () => {
   const { showToast } = useToast();
@@ -88,6 +94,7 @@ const AdminPanel: React.FC = () => {
   const [aiTips, setAiTips] = useState<any[]>([]);
   const [auditFlags, setAuditFlags] = useState<any[]>([]);
   const [healthChecks, setHealthChecks] = useState<any[]>([]);
+  const [userSessions, setUserSessions] = useState<any[]>([]);
   const [archivedSummaries, setArchivedSummaries] = useState<any[]>([]);
   const [testLoading, setTestLoading] = useState(false);
   const [diagnostics, setDiagnostics] = useState<{ report: string; timestamp: string } | null>(null);
@@ -235,6 +242,10 @@ const AdminPanel: React.FC = () => {
           setHealthChecks(healthData);
           setArchivedSummaries(archivesData);
           break;
+        case 'sessions':
+          const sessionsData = await apiService.getAdminUserSessions();
+          setUserSessions(sessionsData);
+          break;
       }
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -262,6 +273,13 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'catalog') return catalogModels.filter(m => m.name.toLowerCase().includes(term));
     if (activeTab === 'backups') return (Array.isArray(backups) ? backups : []).filter(b => b.filename.toLowerCase().includes(term) || (b.created_by || '').toLowerCase().includes(term));
     if (activeTab === 'intelligence') return aiTips.filter(t => t.content.toLowerCase().includes(term));
+    if (activeTab === 'sessions') return userSessions.filter(s => 
+      s.email?.toLowerCase().includes(term) || 
+      s.browser_name?.toLowerCase().includes(term) || 
+      s.os_name?.toLowerCase().includes(term) ||
+      s.city?.toLowerCase().includes(term) ||
+      s.country?.toLowerCase().includes(term)
+    );
     return [];
   };
 
@@ -1617,6 +1635,101 @@ const AdminPanel: React.FC = () => {
     </div>
   );
 
+  const renderSessions = () => {
+    const data = filteredData();
+    
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Időpont / IP</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Felhasználó</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 text-center">Eszköz</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Rendszer / Böngésző</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Helyszín</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {data.map((item: any, idx: number) => (
+                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">
+                        {new Date(item.created_at).toLocaleString('hu-HU')}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono tracking-tighter">
+                        {item.ip_address}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">{item.displayName || 'Névtelen'}</span>
+                      <span className="text-[10px] text-slate-500">{item.email}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex justify-center">
+                      <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+                        {item.device_type === 'mobile' ? (
+                          <Smartphone className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                        ) : item.device_type === 'tablet' ? (
+                          <Tablet className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <Monitor className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col max-w-[180px]">
+                      <div className="flex items-center gap-1.5">
+                        <Cpu className="w-3 h-3 text-slate-400" />
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          {item.os_name} {item.os_version !== 'Unknown' ? item.os_version : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <Globe className="w-3 h-3 text-slate-400" />
+                        <span className="text-[10px] text-slate-500">
+                          {item.browser_name} {item.browser_version !== 'Unknown' ? item.browser_version : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                       <div className="p-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+                         <MapPin className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                       </div>
+                       <div className="flex flex-col">
+                         <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                           {item.city}, {item.country_code}
+                         </span>
+                         <span className="text-[10px] text-slate-500 leading-none">
+                           {item.country}
+                         </span>
+                       </div>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {data.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                    Nincs rögzített belépési adat.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   const renderReports = () => {
     const handleTestSend = async () => {
       setTestLoading(true);
@@ -1800,6 +1913,7 @@ const AdminPanel: React.FC = () => {
       case 'diagnostics': return renderDiagnostics();
       case 'reports': return renderReports();
       case 'intelligence': return renderIntelligence();
+      case 'sessions': return renderSessions();
       default: return renderTable();
     }
   };
@@ -1875,6 +1989,16 @@ const AdminPanel: React.FC = () => {
           >
             <Users className="w-3.5 h-3.5" />
             Csapat
+          </button>
+          <button
+            onClick={() => setActiveTab('sessions')}
+            className={cn(
+              "px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
+              activeTab === 'sessions' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            )}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Belépések
           </button>
           <button
             onClick={() => setActiveTab('sales')}

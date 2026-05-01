@@ -353,6 +353,14 @@ export const apiService = {
     return await response.json();
   },
 
+  async getAdminUserSessions(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/admin/user-sessions`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
   async updateUser(uid: string, data: { role?: string; is_suspended?: boolean }): Promise<void> {
     const response = await fetch(`${API_BASE}/admin/users/${uid}`, {
       method: 'PUT',
