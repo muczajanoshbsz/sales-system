@@ -682,11 +682,15 @@ async function startServer() {
     }
 
     try {
-      console.log(`✉️ Attempting to send report email via smtp.gmail.com (Forcing Port 465 SSL, IPv4 Only)...`);
+      const isGmail = smtpHost?.toLowerCase().includes('gmail');
+      const effectivePort = smtpPort || (isGmail ? 465 : 587);
+      const effectiveSecure = effectivePort === 465;
+
+      console.log(`✉️ Sending report email via ${smtpHost}:${effectivePort} (secure=${effectiveSecure})...`);
       const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
+        host: smtpHost,
+        port: effectivePort,
+        secure: effectiveSecure,
         auth: {
           user: smtpUser,
           pass: smtpPass,
@@ -694,10 +698,10 @@ async function startServer() {
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-        family: 4, // Absolute IPv4 force
+        ...(isGmail ? { family: 4 } : {}),
         tls: {
           rejectUnauthorized: false,
-          servername: 'smtp.gmail.com'
+          ...(isGmail ? { servername: 'smtp.gmail.com' } : {}),
         }
       } as any);
 
@@ -900,11 +904,15 @@ async function startServer() {
     }
 
     try {
-      console.log(`✉️ Attempting to send system email via smtp.gmail.com (Forcing Port 465 SSL, IPv4 Only)...`);
+      const isGmail = smtpHost?.toLowerCase().includes('gmail');
+      const effectivePort = smtpPort || (isGmail ? 465 : 587);
+      const effectiveSecure = effectivePort === 465;
+
+      console.log(`✉️ Sending system email via ${smtpHost}:${effectivePort} (secure=${effectiveSecure})...`);
       const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
+        host: smtpHost,
+        port: effectivePort,
+        secure: effectiveSecure,
         auth: {
           user: smtpUser,
           pass: smtpPass,
@@ -912,10 +920,10 @@ async function startServer() {
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-        family: 4, // Absolute IPv4 force
+        ...(isGmail ? { family: 4 } : {}),
         tls: {
           rejectUnauthorized: false,
-          servername: 'smtp.gmail.com'
+          ...(isGmail ? { servername: 'smtp.gmail.com' } : {}),
         }
       } as any);
 
