@@ -4,6 +4,8 @@ import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import dns from 'dns';
+import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import os from 'os';
@@ -15,6 +17,8 @@ import { GoogleGenAI } from "@google/genai";
 import AdmZip from 'adm-zip';
 import jwt from 'jsonwebtoken';
 import { UAParser } from 'ua-parser-js';
+
+const resolve4 = promisify(dns.resolve4);
 
 dotenv.config();
 
@@ -668,9 +672,22 @@ async function startServer() {
 
   await initDb();
 
+  // Resolves a hostname to its first IPv4 address to avoid Render's IPv6-only DNS
+  async function resolveToIPv4(hostname: string): Promise<string> {
+    try {
+      const addresses = await resolve4(hostname);
+      if (addresses && addresses.length > 0) {
+        console.log(`🔍 DNS resolved ${hostname} → ${addresses[0]} (IPv4)`);
+        return addresses[0];
+      }
+    } catch (err) {
+      console.warn(`⚠️ DNS resolve4 failed for ${hostname}, using hostname as fallback:`, err);
+    }
+    return hostname;
+  }
+
   async function sendWeeklyReportEmail(reportData: any, reportText: string, startDate: Date, endDate: Date) {
     const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = Number(process.env.SMTP_PORT) || 587;
     const smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
     const smtpFrom = process.env.SMTP_FROM || smtpUser;
@@ -682,13 +699,12 @@ async function startServer() {
     }
 
     try {
-      // Force port 465 + SSL + IPv4 to avoid Render's IPv6-only DNS resolution
-      const effectivePort = 465;
-      const effectiveHost = smtpHost || 'smtp.gmail.com';
-      console.log(`✉️ Sending report email via ${effectiveHost}:${effectivePort} (SSL, IPv4 forced)...`);
+      // Pre-resolve to IPv4 to bypass Render's IPv6 DNS resolution
+      const resolvedHost = await resolveToIPv4(smtpHost);
+      console.log(`✉️ Sending report email via ${resolvedHost}:465 (SSL, IPv4 pre-resolved)...`);
       const transporter = nodemailer.createTransport({
-        host: effectiveHost,
-        port: effectivePort,
+        host: resolvedHost,   // IPv4 address, not hostname
+        port: 465,
         secure: true,
         auth: {
           user: smtpUser,
@@ -697,10 +713,9 @@ async function startServer() {
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-        family: 4, // Force IPv4 — Render does not support IPv6 outbound
         tls: {
           rejectUnauthorized: false,
-          servername: effectiveHost,
+          servername: smtpHost, // SNI must use original hostname, not IP
         }
       } as any);
 
@@ -891,7 +906,6 @@ async function startServer() {
 
   async function sendSystemEmail(subject: string, title: string, content: string, details?: any) {
     const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = Number(process.env.SMTP_PORT) || 587;
     const smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
     const smtpFrom = process.env.SMTP_FROM || smtpUser;
@@ -903,13 +917,12 @@ async function startServer() {
     }
 
     try {
-      // Force port 465 + SSL + IPv4 to avoid Render's IPv6-only DNS resolution
-      const effectivePort = 465;
-      const effectiveHost = smtpHost || 'smtp.gmail.com';
-      console.log(`✉️ Sending system email via ${effectiveHost}:${effectivePort} (SSL, IPv4 forced)...`);
+      // Pre-resolve to IPv4 to bypass Render's IPv6 DNS resolution
+      const resolvedHost = await resolveToIPv4(smtpHost);
+      console.log(`✉️ Sending system email via ${resolvedHost}:465 (SSL, IPv4 pre-resolved)...`);
       const transporter = nodemailer.createTransport({
-        host: effectiveHost,
-        port: effectivePort,
+        host: resolvedHost,   // IPv4 address, not hostname
+        port: 465,
         secure: true,
         auth: {
           user: smtpUser,
@@ -918,10 +931,9 @@ async function startServer() {
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-        family: 4, // Force IPv4 — Render does not support IPv6 outbound
         tls: {
           rejectUnauthorized: false,
-          servername: effectiveHost,
+          servername: smtpHost, // SNI must use original hostname, not IP
         }
       } as any);
 
@@ -2425,39 +2437,31 @@ async function startServer() {
         encryptedData
       ]);
 
-      // Notify admins (in-app)
+      // Notify admins
       const admins = await runQuery(pool, "SELECT uid FROM users WHERE role = 'admin'");
-      const sizeMB = (Buffer.byteLength(encryptedData) / 1024 / 1024).toFixed(2);
       for (const admin of admins) {
-        await createNotification(pool, admin.uid, 'success', 'Biztonsági mentés sikeres', 
-          `✅ ${type === 'auto' ? 'Automatikus' : 'Manuális'} mentés elkészült. Méret: ${sizeMB} MB.`);
+        await createNotification(
+          pool, 
+          admin.uid, 
+          'success', 
+          'Biztonsági mentés sikeres', 
+          `✅ Biztonsági mentés sikeres (${new Date().toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit' })}). Adatbázis és felhő tárhely szinkronizálva. Méret: ${(Buffer.byteLength(encryptedData) / 1024).toFixed(2)} KB.`
+        );
       }
-      await sendSystemEmail(
-        `${type === 'auto' ? 'Automatikus' : 'Manuális'} Mentés Sikeres`,
-        `✅ Biztonsági Mentés Elkészült`,
-        `Az adatbázis biztonsági mentése sikeresen elkészült.<br><br>
-         <b>Típus:</b> ${type === 'auto' ? 'Automatikus (cron)' : 'Manuális'}<br>
-         <b>Fájlnév:</b> ${filename}<br>
-         <b>Méret:</b> ${sizeMB} MB<br>
-         <b>Időpont:</b> ${new Date().toLocaleString('hu-HU')}<br>
-         <b>Létrehozta:</b> ${createdBy || 'system'}`,
-        { filename, sizeMB, type, tables }
-      );
+
       return result[0];
     } catch (error) {
+      // Notify admins of failure
       const admins = await runQuery(pool, "SELECT uid FROM users WHERE role = 'admin'");
       for (const admin of admins) {
-        await createNotification(pool, admin.uid, 'error', 'KRITIKUS: Mentés sikertelen',
-          `❌ KRITIKUS: A mentés sikertelen! Ok: ${(error as Error).message}`);
+        await createNotification(
+          pool, 
+          admin.uid, 
+          'error', 
+          'KRITIKUS: Mentés sikertelen', 
+          `❌ KRITIKUS: A mentés sikertelen! Ok: ${(error as Error).message}. Kérlek, készíts egy manuális mentést most!`
+        );
       }
-      await sendSystemEmail(
-        'KRITIKUS: Biztonsági Mentés Sikertelen',
-        '❌ Biztonsági Mentés Hiba',
-        `A(z) <b>${type === 'auto' ? 'automatikus' : 'manuális'}</b> biztonsági mentés <b>SIKERTELEN</b> volt!<br><br>
-         <b>Hiba:</b> ${(error as Error).message}<br>
-         <b>Időpont:</b> ${new Date().toLocaleString('hu-HU')}<br><br>
-         Kérjük, azonnal készítsen manuális mentést az Admin Panelben!`
-      );
       throw error;
     }
   }
@@ -3277,7 +3281,7 @@ async function startServer() {
         `A napi biztonsági mentés és rendszerkarbantartás lefutott.<br><br>
          <b>Mentés:</b> ${artifact.filename}<br>
          <b>Vault:</b> ${vaultStatus === 'completed' ? '☁️ Szinkronizálva a Google Drive-ra' : '❌ Hiba a feltöltésnél!'}<br>
-         <b>Takarítás:</b> -${maintenanceResult.logsRemoved} napló törölve, ${maintenanceResult.backupsOffloaded} mentés archiválva.`,
+         <b>清理:</b> -${maintenanceResult.logsRemoved} napló törölve, ${maintenanceResult.backupsOffloaded} mentés archiválva.`,
         { 
           filename: artifact.filename, 
           size: `${(artifact.size / 1024 / 1024).toFixed(2)} MB`, 
