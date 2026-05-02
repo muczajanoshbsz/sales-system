@@ -715,39 +715,48 @@ async function startServer() {
 
   await initDb();
 
+  async function getSMTPTransporter() {
+    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const smtpPort = Number(process.env.SMTP_PORT) || 465;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+
+    console.log(`✉️ Email Engine: Connecting to ${smtpHost}:${smtpPort} (Secure: ${smtpPort === 465}, IPv4 Forced)...`);
+
+    return nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465, // Port 465 uses SSL/TLS directly
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+      connectionTimeout: 45000,
+      greetingTimeout: 45000,
+      socketTimeout: 60000,
+      family: 4, // Important: Force IPv4 for Render network stability
+      pool: true, // Use pooling for better performance
+      maxConnections: 3,
+      tls: {
+        rejectUnauthorized: false,
+        servername: smtpHost
+      }
+    } as any);
+  }
+
   async function sendWeeklyReportEmail(reportData: any, reportText: string, startDate: Date, endDate: Date) {
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = Number(process.env.SMTP_PORT) || 587;
     const smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
     const smtpFrom = process.env.SMTP_FROM || smtpUser;
     const receiverEmail = process.env.REPORT_RECEIVER_EMAIL;
 
-    if (!smtpHost || !smtpUser || !smtpPass || !receiverEmail) {
+    if (!smtpUser || !smtpPass || !receiverEmail) {
       console.warn('⚠️ SMTP not fully configured. Skipping email report.');
       return;
     }
 
     try {
-      const resolvedHost = await resolveToIPv4('smtp.gmail.com');
-      console.log(`✉️ Attempting to send report email via ${resolvedHost}:587 (STARTTLS, IPv4 Forced)...`);
-      const transporter = nodemailer.createTransport({
-        host: resolvedHost,
-        port: 587,
-        secure: false, // Use STARTTLS
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        connectionTimeout: 30000,
-        greetingTimeout: 30000,
-        socketTimeout: 45000,
-        family: 4,
-        tls: {
-          rejectUnauthorized: false,
-          servername: 'smtp.gmail.com'
-        }
-      } as any);
+      const transporter = await getSMTPTransporter();
 
       // Generate PDF
       const doc = new jsPDF();
@@ -935,38 +944,18 @@ async function startServer() {
   }
 
   async function sendSystemEmail(subject: string, title: string, content: string, details?: any) {
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = Number(process.env.SMTP_PORT) || 587;
     const smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
     const smtpFrom = process.env.SMTP_FROM || smtpUser;
     const receiverEmail = process.env.REPORT_RECEIVER_EMAIL;
 
-    if (!smtpHost || !smtpUser || !smtpPass || !receiverEmail) {
+    if (!smtpUser || !smtpPass || !receiverEmail) {
       console.warn('⚠️ SMTP not fully configured. Skipping system email.');
       return;
     }
 
     try {
-      const resolvedHost = await resolveToIPv4('smtp.gmail.com');
-      console.log(`✉️ Attempting to send system email via ${resolvedHost}:587 (STARTTLS, IPv4 Forced)...`);
-      const transporter = nodemailer.createTransport({
-        host: resolvedHost,
-        port: 587,
-        secure: false, // Use STARTTLS
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        connectionTimeout: 30000,
-        greetingTimeout: 30000,
-        socketTimeout: 45000,
-        family: 4,
-        tls: {
-          rejectUnauthorized: false,
-          servername: 'smtp.gmail.com'
-        }
-      } as any);
+      const transporter = await getSMTPTransporter();
 
       let detailsHtml = '';
       if (details) {
@@ -1887,6 +1876,19 @@ async function startServer() {
     try {
       const users = await runQuery(pool, 'SELECT * FROM users ORDER BY created_at DESC');
       res.json(users);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  apiRouter.get('/debug/email', checkAdmin, async (req, res) => {
+    try {
+      await sendSystemEmail(
+        'Email Test',
+        '📩 Rendszer E-mail Teszt',
+        'Ez egy automatikus teszt üzenet a szerverről. Ha ezt megkaptad, az e-mail küldés sikeresen be van állítva!'
+      );
+      res.json({ success: true, message: 'Email sent successfully via smtp.gmail.com' });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
