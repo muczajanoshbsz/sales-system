@@ -9,7 +9,13 @@ import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import os from 'os';
+import net from 'net';
 import cron from 'node-cron';
+
+// Force DNS to prefer IPv4 (critical for environments like Render/Docker with broken IPv6)
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
 import * as XLSX from 'xlsx';
 import nodemailer from 'nodemailer';
 import { jsPDF } from 'jspdf';
@@ -721,34 +727,63 @@ async function startServer() {
     const smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
 
-    // smtp.googlemail.com is an alias that often has different routing and can be more reliable
-    const targetHost = smtpHost === 'smtp.gmail.com' ? 'smtp.googlemail.com' : smtpHost;
+    console.log(`✉️ Email Engine: Initializing for ${smtpHost}:${smtpPort} (User: ${smtpUser})`);
 
-    // Force IPv4 resolution to bypass any IPv6 routing issues in cloud environments
-    const resolvedHost = await resolveToIPv4(targetHost);
-    console.log(`✉️ Email Engine: Connecting to ${resolvedHost}:${smtpPort} (Host: ${targetHost}, User: ${smtpUser})`);
+    // Diagnostic: Check if we can even reach the port at all via TCP
+    try {
+      await new Promise((resolve, reject) => {
+        const socket = net.createConnection(smtpPort, smtpHost);
+        socket.setTimeout(5000);
+        socket.on('connect', () => { 
+          console.log(`✅ TCP Test: Successfully reached ${smtpHost}:${smtpPort}`); 
+          socket.destroy(); 
+          resolve(true); 
+        });
+        socket.on('timeout', () => { 
+          console.log(`⚠️ TCP Test: Timeout reaching ${smtpHost}:${smtpPort}`); 
+          socket.destroy(); 
+          resolve(false); 
+        });
+        socket.on('error', (err) => { 
+          console.log(`⚠️ TCP Test: Failed to reach ${smtpHost}:${smtpPort}: ${err.message}`); 
+          resolve(false); 
+        });
+      });
+    } catch (e) {
+      console.warn('⚠️ Diagnostic TCP test encountered an exception.');
+    }
 
-    return nodemailer.createTransport({
-      host: resolvedHost,
+    // If it's Gmail, use the built-in service config which is more reliable
+    const isGmail = smtpHost.includes('gmail.com') || smtpHost.includes('googlemail.com');
+
+    const config: any = isGmail ? {
+      service: 'gmail',
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      }
+    } : {
+      host: smtpHost,
       port: smtpPort,
       secure: smtpPort === 465,
       auth: {
         user: smtpUser,
         pass: smtpPass,
-      },
-      connectionTimeout: 60000,
-      greetingTimeout: 60000,
-      socketTimeout: 90000,
-      family: 4,
-      pool: false, // Disabling pool to get immediate connection feedback
-      debug: true,  // Show SMTP conversation in logs
-      logger: true, // Output to console
-      tls: {
-        rejectUnauthorized: false,
-        servername: targetHost, // SNI must match the literal hostname
-        minVersion: 'TLSv1.2'
       }
-    } as any);
+    };
+
+    // Common performance and reliability tweaks
+    config.connectionTimeout = 60000;
+    config.greetingTimeout = 60000;
+    config.socketTimeout = 90000;
+    config.logger = true;
+    config.debug = true;
+    config.tls = {
+      rejectUnauthorized: false,
+      minVersion: 'TLSv1.2'
+    };
+
+    return nodemailer.createTransport(config);
   }
 
   async function sendWeeklyReportEmail(reportData: any, reportText: string, startDate: Date, endDate: Date) {
