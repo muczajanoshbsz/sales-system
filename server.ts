@@ -721,12 +721,14 @@ async function startServer() {
     const smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
 
-    console.log(`✉️ Email Engine: Connecting to ${smtpHost}:${smtpPort} (Secure: ${smtpPort === 465}, IPv4 Forced)...`);
+    // Force IPv4 resolution to bypass Render's IPv6 networking issues
+    const resolvedHost = await resolveToIPv4(smtpHost);
+    console.log(`✉️ Email Engine: Connecting to ${resolvedHost}:${smtpPort} (Original: ${smtpHost}, Secure: ${smtpPort === 465})`);
 
     return nodemailer.createTransport({
-      host: smtpHost,
+      host: resolvedHost,
       port: smtpPort,
-      secure: smtpPort === 465, // Port 465 uses SSL/TLS directly
+      secure: smtpPort === 465, 
       auth: {
         user: smtpUser,
         pass: smtpPass,
@@ -734,12 +736,12 @@ async function startServer() {
       connectionTimeout: 45000,
       greetingTimeout: 45000,
       socketTimeout: 60000,
-      family: 4, // Important: Force IPv4 for Render network stability
-      pool: true, // Use pooling for better performance
+      family: 4, 
+      pool: true,
       maxConnections: 3,
       tls: {
         rejectUnauthorized: false,
-        servername: smtpHost
+        servername: smtpHost // SNI still needs the original hostname
       }
     } as any);
   }
