@@ -682,15 +682,14 @@ async function startServer() {
     }
 
     try {
-      const isGmail = smtpHost?.toLowerCase().includes('gmail');
-      const effectivePort = smtpPort || (isGmail ? 465 : 587);
-      const effectiveSecure = effectivePort === 465;
-
-      console.log(`✉️ Sending report email via ${smtpHost}:${effectivePort} (secure=${effectiveSecure})...`);
+      // Force port 465 + SSL + IPv4 to avoid Render's IPv6-only DNS resolution
+      const effectivePort = 465;
+      const effectiveHost = smtpHost || 'smtp.gmail.com';
+      console.log(`✉️ Sending report email via ${effectiveHost}:${effectivePort} (SSL, IPv4 forced)...`);
       const transporter = nodemailer.createTransport({
-        host: smtpHost,
+        host: effectiveHost,
         port: effectivePort,
-        secure: effectiveSecure,
+        secure: true,
         auth: {
           user: smtpUser,
           pass: smtpPass,
@@ -698,10 +697,10 @@ async function startServer() {
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-        ...(isGmail ? { family: 4 } : {}),
+        family: 4, // Force IPv4 — Render does not support IPv6 outbound
         tls: {
           rejectUnauthorized: false,
-          ...(isGmail ? { servername: 'smtp.gmail.com' } : {}),
+          servername: effectiveHost,
         }
       } as any);
 
@@ -904,15 +903,14 @@ async function startServer() {
     }
 
     try {
-      const isGmail = smtpHost?.toLowerCase().includes('gmail');
-      const effectivePort = smtpPort || (isGmail ? 465 : 587);
-      const effectiveSecure = effectivePort === 465;
-
-      console.log(`✉️ Sending system email via ${smtpHost}:${effectivePort} (secure=${effectiveSecure})...`);
+      // Force port 465 + SSL + IPv4 to avoid Render's IPv6-only DNS resolution
+      const effectivePort = 465;
+      const effectiveHost = smtpHost || 'smtp.gmail.com';
+      console.log(`✉️ Sending system email via ${effectiveHost}:${effectivePort} (SSL, IPv4 forced)...`);
       const transporter = nodemailer.createTransport({
-        host: smtpHost,
+        host: effectiveHost,
         port: effectivePort,
-        secure: effectiveSecure,
+        secure: true,
         auth: {
           user: smtpUser,
           pass: smtpPass,
@@ -920,10 +918,10 @@ async function startServer() {
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-        ...(isGmail ? { family: 4 } : {}),
+        family: 4, // Force IPv4 — Render does not support IPv6 outbound
         tls: {
           rejectUnauthorized: false,
-          ...(isGmail ? { servername: 'smtp.gmail.com' } : {}),
+          servername: effectiveHost,
         }
       } as any);
 
@@ -1318,20 +1316,6 @@ async function startServer() {
         JSON.stringify({ backupId: backup.id, rowCounts: rowCount, testedAt: new Date().toISOString() })
       ]);
 
-      // Send success email
-      await sendSystemEmail(
-        'Katasztrófa Helyreállítási Teszt: SIKERES',
-        '✅ Mentés Integritása Ellenőrizve',
-        `Az automatikus visszaállítási teszt sikeresen lefutott.<br><br>
-         <b>Tesztelt mentés:</b> ${backup.filename}<br>
-         <b>Felhasználók:</b> ${rowCount.users} rekord<br>
-         <b>Eladások:</b> ${rowCount.sales} rekord<br>
-         <b>Készlet:</b> ${rowCount.stock} rekord<br>
-         <b>Státusz:</b> ✅ Minden szükséges tábla megtalálható és érvényes<br>
-         <b>Időpont:</b> ${new Date().toLocaleString('hu-HU')}`,
-        { backupId: backup.id, rowCounts: rowCount }
-      );
-
       console.log('✅ Disaster Recovery Drill: Success');
     } catch (err) {
       console.error('❌ Disaster Recovery Drill: Failed!', err);
@@ -1574,8 +1558,7 @@ async function startServer() {
 
     try {
       console.log('External Cron Trigger: Creating daily backup...');
-      const backup = await createBackup('auto');
-      // createBackup() already sends the success email internally
+      await createBackup('auto');
       res.json({ success: true });
     } catch (error) {
       console.error('External Cron Trigger failed:', error);
@@ -2397,21 +2380,6 @@ async function startServer() {
     ]);
 
     console.log('✅ System artifact generated and stored in database.');
-
-    // Send email notification about artifact creation
-    await sendSystemEmail(
-      'Rendszer Snapshot Elkészült',
-      '📦 Teljes Rendszer Pillanatkép (Forráskód + Adatbázis)',
-      `A teljes rendszer pillanatkép sikeresen elkészült.<br><br>
-       <b>Fájlnév:</b> ${filename}<br>
-       <b>Méret:</b> ${(result[0].size / 1024 / 1024).toFixed(2)} MB<br>
-       <b>Tartalom:</b> Forráskód + ${tables.length} adatbázis tábla<br>
-       <b>Titkosítás:</b> AES-256-CBC<br>
-       <b>Időpont:</b> ${new Date().toLocaleString('hu-HU')}<br>
-       <b>Létrehozta:</b> ${createdBy}`,
-      { filename, tableCount: tables.length }
-    );
-
     return result[0];
   }
 
@@ -2461,16 +2429,9 @@ async function startServer() {
       const admins = await runQuery(pool, "SELECT uid FROM users WHERE role = 'admin'");
       const sizeMB = (Buffer.byteLength(encryptedData) / 1024 / 1024).toFixed(2);
       for (const admin of admins) {
-        await createNotification(
-          pool, 
-          admin.uid, 
-          'success', 
-          'Biztonsági mentés sikeres', 
-          `✅ ${type === 'auto' ? 'Automatikus' : 'Manuális'} mentés elkészült. Méret: ${sizeMB} MB.`
-        );
+        await createNotification(pool, admin.uid, 'success', 'Biztonsági mentés sikeres', 
+          `✅ ${type === 'auto' ? 'Automatikus' : 'Manuális'} mentés elkészült. Méret: ${sizeMB} MB.`);
       }
-
-      // Send email notification
       await sendSystemEmail(
         `${type === 'auto' ? 'Automatikus' : 'Manuális'} Mentés Sikeres`,
         `✅ Biztonsági Mentés Elkészült`,
@@ -2482,19 +2443,12 @@ async function startServer() {
          <b>Létrehozta:</b> ${createdBy || 'system'}`,
         { filename, sizeMB, type, tables }
       );
-
       return result[0];
     } catch (error) {
-      // Notify admins of failure (in-app + email)
       const admins = await runQuery(pool, "SELECT uid FROM users WHERE role = 'admin'");
       for (const admin of admins) {
-        await createNotification(
-          pool, 
-          admin.uid, 
-          'error', 
-          'KRITIKUS: Mentés sikertelen', 
-          `❌ KRITIKUS: A mentés sikertelen! Ok: ${(error as Error).message}. Kérlek, készíts egy manuális mentést most!`
-        );
+        await createNotification(pool, admin.uid, 'error', 'KRITIKUS: Mentés sikertelen',
+          `❌ KRITIKUS: A mentés sikertelen! Ok: ${(error as Error).message}`);
       }
       await sendSystemEmail(
         'KRITIKUS: Biztonsági Mentés Sikertelen',
@@ -3004,19 +2958,6 @@ async function startServer() {
           const user = (req as any).user;
           await logActivity(user.uid, 'Vault Upload', `Backup ${backupRows[0].filename} feltöltve (ID: ${uploadResult.id})`, req);
           await createNotification(pool, user.uid, 'success', 'Vault Szinkronizáció', `✅ Mentés sikeresen archiválva a Drive-on: ${backupRows[0].filename}`);
-          
-          // Send email on vault upload success
-          await sendSystemEmail(
-            'Google Drive Vault Szinkronizáció Sikeres',
-            '☁️ Mentés Feltöltve a Google Drive-ra',
-            `A biztonsági mentés sikeresen fel lett töltve a Google Drive Vault-ba.<br><br>
-             <b>Fájlnév:</b> ${backupRows[0].filename}<br>
-             <b>Drive link:</b> <a href="${uploadResult.webViewLink}">${uploadResult.webViewLink}</a><br>
-             <b>Ellenőrző összeg (SHA-256):</b> ${uploadResult.checksum}<br>
-             <b>Feltöltötte:</b> ${user.email}<br>
-             <b>Időpont:</b> ${new Date().toLocaleString('hu-HU')}`,
-            { driveId: uploadResult.id, checksum: uploadResult.checksum }
-          );
         } catch (error) {
           console.error('Background Vault Upload failed:', error);
           try {
