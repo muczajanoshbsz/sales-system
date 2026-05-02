@@ -727,43 +727,59 @@ async function startServer() {
     const smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
 
-    console.log(`✉️ Email Engine: Initializing for ${smtpHost}:${smtpPort} (User: ${smtpUser})`);
+    console.log(`✉️ Email Engine: Initializing for ${smtpHost}:${smtpPort}`);
+    console.log(`🔑 Env Check: USER=${smtpUser ? 'SET (' + smtpUser.length + ' chars)' : 'MISSING'}, PASS=${smtpPass ? 'SET (' + smtpPass.length + ' chars)' : 'MISSING'}`);
 
-    // Diagnostic: Check if we can even reach the port at all via TCP
-    try {
-      await new Promise((resolve, reject) => {
-        const socket = net.createConnection(smtpPort, smtpHost);
-        socket.setTimeout(5000);
-        socket.on('connect', () => { 
-          console.log(`✅ TCP Test: Successfully reached ${smtpHost}:${smtpPort}`); 
-          socket.destroy(); 
-          resolve(true); 
+    // Diagnostic: Comprehensive Port Scan
+    const portsToTest = [465, 587];
+    for (const port of portsToTest) {
+      try {
+        await new Promise((resolve) => {
+          const socket = net.createConnection(port, smtpHost);
+          socket.setTimeout(3000);
+          socket.on('connect', () => { 
+            console.log(`✅ TCP Test: Port ${port} is REACHABLE on ${smtpHost}`); 
+            socket.destroy(); 
+            resolve(true); 
+          });
+          socket.on('timeout', () => { 
+            console.log(`⚠️ TCP Test: Port ${port} TIMEOUT on ${smtpHost}`); 
+            socket.destroy(); 
+            resolve(false); 
+          });
+          socket.on('error', (err) => { 
+            console.log(`❌ TCP Test: Port ${port} ERROR on ${smtpHost}: ${err.message}`); 
+            resolve(false); 
+          });
         });
-        socket.on('timeout', () => { 
-          console.log(`⚠️ TCP Test: Timeout reaching ${smtpHost}:${smtpPort}`); 
-          socket.destroy(); 
-          resolve(false); 
-        });
-        socket.on('error', (err) => { 
-          console.log(`⚠️ TCP Test: Failed to reach ${smtpHost}:${smtpPort}: ${err.message}`); 
-          resolve(false); 
-        });
-      });
-    } catch (e) {
-      console.warn('⚠️ Diagnostic TCP test encountered an exception.');
+      } catch (e) {
+        // Ignore loop errors
+      }
     }
 
-    // If it's Gmail, use the built-in service config which is more reliable
+    // Force IPv4 resolution manually for the transport
+    let resolvedHost = smtpHost;
+    try {
+      const addresses = await resolve4(smtpHost);
+      if (addresses && addresses.length > 0) {
+        resolvedHost = addresses[0];
+        console.log(`🔍 Forced IPv4: ${smtpHost} -> ${resolvedHost}`);
+      }
+    } catch (e) {
+      console.warn('⚠️ IPv4 Resolution failed, using original hostname');
+    }
+
+    // Gmail-specific "service" configuration is usually the most stable fallback
     const isGmail = smtpHost.includes('gmail.com') || smtpHost.includes('googlemail.com');
 
-    const config: any = isGmail ? {
+    const config: any = (isGmail && !process.env.FORCE_SMTP_CONFIG) ? {
       service: 'gmail',
       auth: {
         user: smtpUser,
         pass: smtpPass,
       }
     } : {
-      host: smtpHost,
+      host: resolvedHost,
       port: smtpPort,
       secure: smtpPort === 465,
       auth: {
@@ -772,15 +788,15 @@ async function startServer() {
       }
     };
 
-    // Common performance and reliability tweaks
-    config.connectionTimeout = 60000;
-    config.greetingTimeout = 60000;
-    config.socketTimeout = 90000;
+    config.connectionTimeout = 30000;
+    config.greetingTimeout = 30000;
+    config.socketTimeout = 45000;
     config.logger = true;
     config.debug = true;
     config.tls = {
       rejectUnauthorized: false,
-      minVersion: 'TLSv1.2'
+      minVersion: 'TLSv1.2',
+      servername: smtpHost // Always use the original hostname for SNI
     };
 
     return nodemailer.createTransport(config);
