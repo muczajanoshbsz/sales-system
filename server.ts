@@ -721,27 +721,32 @@ async function startServer() {
     const smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
 
-    // Force IPv4 resolution to bypass Render's IPv6 networking issues
-    const resolvedHost = await resolveToIPv4(smtpHost);
-    console.log(`✉️ Email Engine: Connecting to ${resolvedHost}:${smtpPort} (Original: ${smtpHost}, Secure: ${smtpPort === 465})`);
+    // smtp.googlemail.com is an alias that often has different routing and can be more reliable
+    const targetHost = smtpHost === 'smtp.gmail.com' ? 'smtp.googlemail.com' : smtpHost;
+
+    // Force IPv4 resolution to bypass any IPv6 routing issues in cloud environments
+    const resolvedHost = await resolveToIPv4(targetHost);
+    console.log(`✉️ Email Engine: Connecting to ${resolvedHost}:${smtpPort} (Host: ${targetHost}, User: ${smtpUser})`);
 
     return nodemailer.createTransport({
       host: resolvedHost,
       port: smtpPort,
-      secure: smtpPort === 465, 
+      secure: smtpPort === 465,
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
-      connectionTimeout: 45000,
-      greetingTimeout: 45000,
-      socketTimeout: 60000,
-      family: 4, 
-      pool: true,
-      maxConnections: 3,
+      connectionTimeout: 60000,
+      greetingTimeout: 60000,
+      socketTimeout: 90000,
+      family: 4,
+      pool: false, // Disabling pool to get immediate connection feedback
+      debug: true,  // Show SMTP conversation in logs
+      logger: true, // Output to console
       tls: {
         rejectUnauthorized: false,
-        servername: smtpHost // SNI still needs the original hostname
+        servername: targetHost, // SNI must match the literal hostname
+        minVersion: 'TLSv1.2'
       }
     } as any);
   }
