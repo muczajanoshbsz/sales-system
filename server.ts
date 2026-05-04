@@ -3241,6 +3241,33 @@ async function startServer() {
     }
   });
 
+  adminRouter.get('/ai/tips', async (req, res) => {
+    try {
+      const rows = await runQuery(pool, 'SELECT * FROM ai_tips ORDER BY created_at DESC LIMIT 20');
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.get('/ai/audit-flags', async (req, res) => {
+    try {
+      const rows = await runQuery(pool, 'SELECT * FROM data_audit_flags ORDER BY created_at DESC LIMIT 50');
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  adminRouter.post('/ai/trigger-analysis', async (req, res) => {
+    try {
+      const result = await runAIBusinessAnalysis();
+      res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   adminRouter.get('/ai/archives', async (req, res) => {
     try {
       const rows = await runQuery(pool, 'SELECT * FROM archived_summaries ORDER BY created_at DESC');
@@ -3303,11 +3330,105 @@ async function startServer() {
     }
   });
 
+  // --- AI BUSINESS ANALYSIS ENGINE ---
+  async function runAIBusinessAnalysis() {
+    console.log('🤖 AI Analysis: Scanning system for insights and risks...');
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn('⚠️ AI Analysis skipped: GEMINI_API_KEY missing.');
+      return;
+    }
+
+    try {
+      // 1. Gather Context
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const [sales, stock, auditLogs] = await Promise.all([
+        runQuery(pool, 'SELECT model, platform, sell_price, profit, date FROM sales WHERE created_at > ?', [thirtyDaysAgo.toISOString()]),
+        runQuery(pool, 'SELECT model, quantity, buy_price FROM stock'),
+        runQuery(pool, 'SELECT action, details, timestamp FROM audit_logs ORDER BY timestamp DESC LIMIT 50')
+      ]);
+
+      const context = {
+        period: "Last 30 days",
+        sales_data: sales,
+        stock_levels: stock,
+        recent_activity: auditLogs,
+        currentTime: new Date().toISOString()
+      };
+
+      const prompt = `
+        You are the "System Auditor & Business Advisor" for an AirPods reseller app.
+        Analyze the provided data and return a JSON response with two arrays: "tips" and "flags".
+
+        - "tips": General business advice based on trends (buy more of X, platform Y is performing well, etc.)
+        - "flags": Specific risks or anomalies (low stock for critical items, negative profit sales, suspicious activity in logs, inconsistent pricing).
+
+        Rules:
+        1. Always respond in Hungarian.
+        2. "tips" should have: type (marketing, stock, strategy), content (markdown).
+        3. "flags" should have: entity_type (sale, stock, system), severity (low, medium, high), description, suggestion.
+
+        Data: ${JSON.stringify(context)}
+
+        Return ONLY a JSON object:
+        {
+          "tips": [{ "type": "...", "content": "..." }],
+          "flags": [{ "entity_type": "...", "severity": "...", "description": "...", "suggestion": "..." }]
+        }
+      `;
+
+      const analysis = await callGeminiJSON<any>(apiKey, prompt);
+
+      // 2. Persist Tips (Keep last 20 total)
+      if (analysis.tips && analysis.tips.length > 0) {
+        for (const tip of analysis.tips) {
+          await runExec(pool, `
+            INSERT INTO ai_tips (type, content, metadata)
+            VALUES (?, ?, ?)
+          `, [tip.type, tip.content, JSON.stringify({ generatedAt: new Date().toISOString() })]);
+        }
+        // Cleanup old tips beyond 20
+        await runExec(pool, 'DELETE FROM ai_tips WHERE id NOT IN (SELECT id FROM ai_tips ORDER BY created_at DESC LIMIT 20)');
+      }
+
+      // 3. Persist Flags (Keep unresolved ones)
+      if (analysis.flags && analysis.flags.length > 0) {
+        for (const flag of analysis.flags) {
+          // Check for duplication of similar flags to avoid spam
+          const existing = await runQuery(pool, `
+            SELECT id FROM data_audit_flags 
+            WHERE description = ? AND is_resolved = FALSE
+            LIMIT 1
+          `, [flag.description]);
+
+          if (existing.length === 0) {
+            await runExec(pool, `
+              INSERT INTO data_audit_flags (entity_type, severity, description, suggestion, metadata)
+              VALUES (?, ?, ?, ?, ?)
+            `, [flag.entity_type, flag.severity, flag.description, flag.suggestion, JSON.stringify({ generatedAt: new Date().toISOString() })]);
+          }
+        }
+      }
+
+      console.log(`✅ AI Analysis complete: ${analysis.tips?.length || 0} tips, ${analysis.flags?.length || 0} flags generated.`);
+      return analysis;
+
+    } catch (error) {
+      console.error('❌ AI Analysis Engine failed:', error);
+      throw error;
+    }
+  }
+
   // --- CONSOLIDATED DAILY MAINTENANCE (SUPABASE EGRESS OPTIMIZATION) ---
   async function runConsolidatedDailyMaintenance() {
     console.log('🌟 Starting Consolidated Daily Maintenance & Backup...');
     try {
-      // 1. Create Mega Snapshot (Encrypted)
+      // 1. Run AI Review first
+      await runAIBusinessAnalysis().catch(e => console.error('AI Analysis failed during maintenance:', e));
+
+      // 2. Create Mega Snapshot (Encrypted)
       const artifact = await createSystemArtifact('consolidated (auto)');
       console.log(`✅ Snapshot created: ${artifact.filename}`);
 
@@ -3375,6 +3496,11 @@ async function startServer() {
     await runConsolidatedDailyMaintenance();
     await runDatabaseHygiene(); // New professional hygiene
     await runFileSystemCleanup();
+  });
+
+  // AI Review at 2:00 PM
+  cron.schedule('0 14 * * *', async () => {
+    await runAIBusinessAnalysis().catch(e => console.error('AI Scheduled Analysis failed:', e));
   });
 
   // Security Review every 10 minutes (redundant to Lazy Cron but good for safety)
@@ -3641,10 +3767,26 @@ async function startServer() {
   let lastRecoveryDrillCheck = 0;
   let lastSecurityReviewCheck = 0;
   let lastHygieneCheck = 0;
+  let lastAIAnalysisCheck = 0;
 
   apiRouter.use(async (req, res, next) => {
     const now = Date.now();
     
+    // 0. AI Analysis Check (every 12 hours)
+    if (now - lastAIAnalysisCheck > 12 * 60 * 60 * 1000) {
+      lastAIAnalysisCheck = now;
+      try {
+        const lastAnalysis = await runQuery(pool, "SELECT created_at FROM ai_tips ORDER BY created_at DESC LIMIT 1");
+        const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+        if (lastAnalysis.length === 0 || new Date(lastAnalysis[0].created_at) < twelveHoursAgo) {
+          console.log('Lazy Cron: Triggering AI Analysis...');
+          runAIBusinessAnalysis().catch(err => console.error('Lazy Cron (AI Analysis) failed:', err));
+        }
+      } catch (e) {
+        console.error('Lazy Cron (AI Check) failed:', e);
+      }
+    }
+
     // 1. Daily Backup Check (every 15 mins check)
     if (now - lastAutoBackupCheck > 15 * 60 * 1000) {
       lastAutoBackupCheck = now;
