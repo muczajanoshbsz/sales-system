@@ -17,7 +17,7 @@ if (typeof dns.setDefaultResultOrder === 'function') {
   dns.setDefaultResultOrder('ipv4first');
 }
 import * as XLSX from 'xlsx';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { jsPDF } from 'jspdf';
 import { GoogleGenAI } from "@google/genai";
 import AdmZip from 'adm-zip';
@@ -721,100 +721,33 @@ async function startServer() {
 
   await initDb();
 
-  async function getSMTPTransporter() {
-    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const smtpPort = Number(process.env.SMTP_PORT) || 465;
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-
-    console.log(`✉️ Email Engine: Initializing for ${smtpHost}:${smtpPort}`);
-    console.log(`🔑 Env Check: USER=${smtpUser ? 'SET (' + smtpUser.length + ' chars)' : 'MISSING'}, PASS=${smtpPass ? 'SET (' + smtpPass.length + ' chars)' : 'MISSING'}`);
-
-    // Diagnostic: Comprehensive Port Scan
-    const portsToTest = [465, 587];
-    for (const port of portsToTest) {
-      try {
-        await new Promise((resolve) => {
-          const socket = net.createConnection(port, smtpHost);
-          socket.setTimeout(3000);
-          socket.on('connect', () => { 
-            console.log(`✅ TCP Test: Port ${port} is REACHABLE on ${smtpHost}`); 
-            socket.destroy(); 
-            resolve(true); 
-          });
-          socket.on('timeout', () => { 
-            console.log(`⚠️ TCP Test: Port ${port} TIMEOUT on ${smtpHost}`); 
-            socket.destroy(); 
-            resolve(false); 
-          });
-          socket.on('error', (err) => { 
-            console.log(`❌ TCP Test: Port ${port} ERROR on ${smtpHost}: ${err.message}`); 
-            resolve(false); 
-          });
-        });
-      } catch (e) {
-        // Ignore loop errors
+  let resendClient: Resend | null = null;
+  function getResendClient() {
+    if (!resendClient) {
+      const apiKey = process.env.RESEND_API_KEY;
+      if (!apiKey) {
+        throw new Error('RESEND_API_KEY environment variable is required');
       }
+      resendClient = new Resend(apiKey);
     }
-
-    // Force IPv4 resolution manually for the transport
-    let resolvedHost = smtpHost;
-    try {
-      const addresses = await resolve4(smtpHost);
-      if (addresses && addresses.length > 0) {
-        resolvedHost = addresses[0];
-        console.log(`🔍 Forced IPv4: ${smtpHost} -> ${resolvedHost}`);
-      }
-    } catch (e) {
-      console.warn('⚠️ IPv4 Resolution failed, using original hostname');
-    }
-
-    // Gmail-specific "service" configuration is usually the most stable fallback
-    const isGmail = smtpHost.includes('gmail.com') || smtpHost.includes('googlemail.com');
-
-    const config: any = (isGmail && !process.env.FORCE_SMTP_CONFIG) ? {
-      service: 'gmail',
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      }
-    } : {
-      host: resolvedHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      }
-    };
-
-    config.connectionTimeout = 30000;
-    config.greetingTimeout = 30000;
-    config.socketTimeout = 45000;
-    config.logger = true;
-    config.debug = true;
-    config.tls = {
-      rejectUnauthorized: false,
-      minVersion: 'TLSv1.2',
-      servername: smtpHost // Always use the original hostname for SNI
-    };
-
-    return nodemailer.createTransport(config);
+    return resendClient;
   }
 
   async function sendWeeklyReportEmail(reportData: any, reportText: string, startDate: Date, endDate: Date) {
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-    const smtpFrom = process.env.SMTP_FROM || smtpUser;
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const smtpFrom = process.env.SMTP_FROM || 'onboarding@resend.dev';
     const receiverEmail = process.env.REPORT_RECEIVER_EMAIL;
 
-    if (!smtpUser || !smtpPass || !receiverEmail) {
-      console.warn('⚠️ SMTP not fully configured. Skipping email report.');
+    if (!resendApiKey || !receiverEmail) {
+      console.warn('⚠️ Resend not fully configured. Skipping email report.');
       return;
     }
 
     try {
-      const transporter = await getSMTPTransporter();
+      const resend = getResendClient();
+      const fromEmail = smtpFrom.includes('<') ? smtpFrom : `"AirPods Manager" <${smtpFrom}>`;
+      
+      console.log(`✉️ Resend: Sending weekly report from ${fromEmail} to ${receiverEmail}`);
 
       // Generate PDF
       const doc = new jsPDF();
@@ -960,10 +893,10 @@ async function startServer() {
 
       const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
 
-      // Send Email
-      await transporter.sendMail({
-        from: `"AirPods Manager" <${smtpFrom}>`,
-        to: receiverEmail,
+      // Send Email via Resend
+      const { data, error } = await resend.emails.send({
+        from: fromEmail,
+        to: [receiverEmail],
         subject: `📊 Heti Jelentés: ${startDate.toLocaleDateString('hu-HU')} - ${endDate.toLocaleDateString('hu-HU')}`,
         html: `
           <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; color: #334155; background-color: #f8fafc; border-radius: 24px;">
@@ -995,25 +928,31 @@ async function startServer() {
         ],
       });
 
-      console.log('✅ Weekly report email sent successfully to:', receiverEmail);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      console.log('✅ Weekly report email sent successfully to:', receiverEmail, data?.id);
     } catch (error) {
       console.error('❌ Failed to send weekly report email:', error);
     }
   }
 
   async function sendSystemEmail(subject: string, title: string, content: string, details?: any) {
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-    const smtpFrom = process.env.SMTP_FROM || smtpUser;
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const smtpFrom = process.env.SMTP_FROM || 'onboarding@resend.dev';
     const receiverEmail = process.env.REPORT_RECEIVER_EMAIL;
 
-    if (!smtpUser || !smtpPass || !receiverEmail) {
-      console.warn('⚠️ SMTP not fully configured. Skipping system email.');
+    if (!resendApiKey || !receiverEmail) {
+      console.warn('⚠️ Resend not fully configured. Skipping system email.');
       return;
     }
 
     try {
-      const transporter = await getSMTPTransporter();
+      const resend = getResendClient();
+      const fromEmail = smtpFrom.includes('<') ? smtpFrom : `"AirPods Vault" <${smtpFrom}>`;
+
+      console.log(`✉️ Resend: Sending system email from ${fromEmail} to ${receiverEmail}`);
 
       let detailsHtml = '';
       if (details) {
@@ -1022,9 +961,9 @@ async function startServer() {
         </div>`;
       }
 
-      await transporter.sendMail({
-        from: `"AirPods Vault" <${smtpFrom}>`,
-        to: receiverEmail,
+      const { data, error } = await resend.emails.send({
+        from: fromEmail,
+        to: [receiverEmail],
         subject: `[VAULT-ALERT] ${subject}`,
         html: `
           <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; color: #334155; background-color: #f8fafc; border-radius: 24px; border: 1px solid #e2e8f0;">
@@ -1045,7 +984,12 @@ async function startServer() {
           </div>
         `,
       });
-      console.log('✅ System alert email sent:', subject);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      console.log('✅ System alert email sent:', subject, data?.id);
     } catch (error) {
       console.error('❌ Failed to send system email:', error);
     }
