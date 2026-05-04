@@ -734,12 +734,12 @@ async function startServer() {
   }
 
   async function sendWeeklyReportEmail(reportData: any, reportText: string, startDate: Date, endDate: Date) {
-    const resendApiKey = process.env.RESEND_API_KEY;
-    const smtpFrom = process.env.SMTP_FROM || 'onboarding@resend.dev';
-    const receiverEmail = process.env.REPORT_RECEIVER_EMAIL;
+    const resendApiKey = process.env.RESEND_API_KEY?.trim();
+    const smtpFrom = (process.env.EMAIL_FROM || process.env.SMTP_FROM || 'onboarding@resend.dev').trim();
+    const receiverEmail = process.env.REPORT_RECEIVER_EMAIL?.trim();
 
     if (!resendApiKey || !receiverEmail) {
-      console.warn('⚠️ Resend not fully configured. Skipping email report.');
+      console.warn(`⚠️ Resend not fully configured. API_KEY: ${resendApiKey ? 'SET' : 'MISSING'}, RECEIVER: ${receiverEmail ? 'SET' : 'MISSING'}. Skipping email report.`);
       return;
     }
 
@@ -939,12 +939,12 @@ async function startServer() {
   }
 
   async function sendSystemEmail(subject: string, title: string, content: string, details?: any) {
-    const resendApiKey = process.env.RESEND_API_KEY;
-    const smtpFrom = process.env.SMTP_FROM || 'onboarding@resend.dev';
-    const receiverEmail = process.env.REPORT_RECEIVER_EMAIL;
+    const resendApiKey = process.env.RESEND_API_KEY?.trim();
+    const smtpFrom = (process.env.EMAIL_FROM || process.env.SMTP_FROM || 'onboarding@resend.dev').trim();
+    const receiverEmail = process.env.REPORT_RECEIVER_EMAIL?.trim();
 
     if (!resendApiKey || !receiverEmail) {
-      console.warn('⚠️ Resend not fully configured. Skipping system email.');
+      console.warn(`⚠️ Resend not fully configured. API_KEY: ${resendApiKey ? 'SET' : 'MISSING'}, RECEIVER: ${receiverEmail ? 'SET' : 'MISSING'}. Skipping system email.`);
       return;
     }
 
