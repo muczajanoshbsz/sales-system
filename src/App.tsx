@@ -21,7 +21,7 @@ import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import Calculator from './components/Calculator';
 import ErrorBoundary from './components/ErrorBoundary';
-import { OnboardingTour } from './components/OnBoardingtour';
+import { OnboardingTour } from './components/OnboardingTour';
 import { GhostBar } from './components/GhostBar';
 import { TimeTravelBar } from './components/TimeTravelBar';
 import { SessionMonitor } from './components/SessionMonitor';
