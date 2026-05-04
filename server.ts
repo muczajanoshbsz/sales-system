@@ -747,7 +747,7 @@ async function startServer() {
       const resend = getResendClient();
       const fromEmail = smtpFrom.includes('<') ? smtpFrom : `"AirPods Manager" <${smtpFrom}>`;
       
-      console.log(`✉️ Resend: Sending weekly report from ${fromEmail} to ${receiverEmail}`);
+      console.log(`✉️ Resend (BG): Generating PDF Report for ${receiverEmail}...`);
 
       // Generate PDF
       const doc = new jsPDF();
@@ -1119,15 +1119,16 @@ async function startServer() {
     const startDate = new Date();
     startDate.setDate(endDate.getDate() - daysBefore);
 
-    // Gather data
-    const [sales, stock, backups, auditLogs, users] = await Promise.all([
+    // Gather data - Optimize by only fetching count for logs to save memory
+    const [sales, stock, backups, logCountRes, users] = await Promise.all([
       runQuery(pool, 'SELECT * FROM sales WHERE created_at >= ?', [startDate.toISOString()]),
       runQuery(pool, 'SELECT * FROM stock'),
-      runQuery(pool, 'SELECT * FROM backups WHERE created_at >= ?', [startDate.toISOString()]),
-      runQuery(pool, 'SELECT * FROM audit_logs WHERE "timestamp" >= ?', [startDate.toISOString()]),
+      runQuery(pool, 'SELECT id, type, metadata, created_at FROM backups WHERE created_at >= ?', [startDate.toISOString()]),
+      runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text as count FROM audit_logs WHERE "timestamp" >= ?', [startDate.toISOString()]),
       runQuery(pool, 'SELECT uid, email, role FROM users')
     ]);
 
+    const auditLogsCount = Number(logCountRes[0].count);
     const totalProfit = sales.reduce((sum, s) => sum + (Number(s.profit) || 0), 0);
     const totalStockValue = stock.reduce((sum, s) => sum + (Number(s.buy_price) * Number(s.quantity) || 0), 0);
     
@@ -1152,7 +1153,7 @@ async function startServer() {
           const meta = b.metadata || {};
           return meta.googleDriveId || meta.vaultStatus === 'completed';
         }).length}/${backups.length} successful
-      - System Audit Logs: ${auditLogs.length}
+      - System Audit Logs: ${auditLogsCount}
       
       The report should be professional, encouraging, and insightful.
       Format the response as a JSON object with the following structure:
@@ -1189,38 +1190,60 @@ async function startServer() {
 
     // Store for each admin
     const admins = users.filter(u => u.role === 'admin');
-    for (const admin of admins) {
-      await runExec(pool, `
-        INSERT INTO weekly_reports ("userId", start_date, end_date, report_json, report_text)
-        VALUES (?, ?, ?, ?, ?)
-      `, [
-        admin.uid, 
-        startDate.toISOString().split('T')[0], 
-        endDate.toISOString().split('T')[0], 
-        JSON.stringify(reportData),
-        reportJson.summary_text
-      ]);
+    
+    // Process sending in background to avoid blocking Render's main thread and prevent timeouts
+    setImmediate(async () => {
+      try {
+        console.log(`🚀 Background Task: Starting reporting for ${admins.length} admins...`);
+        
+        for (const admin of admins) {
+          await runExec(pool, `
+            INSERT INTO weekly_reports ("userId", start_date, end_date, report_json, report_text)
+            VALUES (?, ?, ?, ?, ?)
+          `, [
+            admin.uid, 
+            startDate.toISOString().split('T')[0], 
+            endDate.toISOString().split('T')[0], 
+            JSON.stringify(reportData),
+            reportJson.summary_text
+          ]);
 
-      await createNotification(
-        pool, 
-        admin.uid, 
-        'info', 
-        'Üzleti jelentés elkészült', 
-        `📊 A ${daysBefore} napos üzleti mérleg elkészült. Nézd meg az Admin Panelben!`
-      );
-    }
+          await createNotification(
+            pool, 
+            admin.uid, 
+            'info', 
+            'Üzleti jelentés elkészült', 
+            `📊 A ${daysBefore} napos üzleti mérleg elkészült. Nézd meg az Admin Panelben!`
+          );
+        }
 
-    // Send Email Report ONCE for the system
-    await sendWeeklyReportEmail(
-      {
-        salesCount: sales.length,
-        totalProfit: totalProfit,
-        starProduct: starProduct
-      },
-      reportJson.summary_text,
-      startDate,
-      endDate
-    );
+        // Send Email Report ONCE for the system
+        await sendWeeklyReportEmail(
+          {
+            salesCount: sales.length,
+            totalProfit: totalProfit,
+            starProduct: starProduct
+          },
+          reportJson.summary_text,
+          startDate,
+          endDate
+        );
+        
+        console.log('✅ Background Task: Reporting complete.');
+      } catch (bgErr) {
+        console.error('❌ Background Task Error (Report Generation):', bgErr);
+        // Alert admins of failure via notification
+        for (const admin of admins) {
+          await createNotification(
+            pool, 
+            admin.uid, 
+            'error', 
+            'Hiba a jelentés küldésekor', 
+            `❌ A heti jelentés generálása vagy küldése megszakadt: ${(bgErr as Error).message}`
+          );
+        }
+      }
+    });
 
     return reportJson;
   }
