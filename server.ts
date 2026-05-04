@@ -1643,37 +1643,8 @@ async function startServer() {
     message: { error: 'Az AI műveletek korlátozva vannak (max 20 kérés/óra).' }
   });
 
-  const verifyAdminProtection = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const protectionToken = process.env.ADMIN_PROTECTION_TOKEN;
-    if (!protectionToken) return next();
-    
-    // Only verify for modifying methods (POST, PUT, DELETE) on admin routes
-    if (req.method === 'GET') return next();
-
-    const providedToken = req.headers['x-admin-protection-token'];
-    if (providedToken !== protectionToken) {
-      console.warn(`🛡️ Security: Unauthorized restricted action attempt by ${getClientIp(req)}`);
-      return res.status(401).json({ error: 'Kritikus művelet: Érvénytelen vagy hiányzó admin védelmi token.' });
-    }
-    next();
-  };
-
-  const clientAppFingerprint = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const fingerprint = req.headers['x-client-fingerprint'];
-    const expectedFingerprint = process.env.CLIENT_FINGERPRINT || 'AirPods-System-V2';
-    
-    if (fingerprint !== expectedFingerprint) {
-      console.warn(`🛡️ Security: Invalid client fingerprint from ${getClientIp(req)}: ${fingerprint}`);
-      if (process.env.ENFORCE_FINGERPRINT === 'true') {
-         return res.status(403).json({ error: 'Unauthorized Client Application' });
-      }
-    }
-    next();
-  };
-
   const apiRouter = express.Router();
   apiRouter.use(standardLimiter);
-  apiRouter.use(clientAppFingerprint);
   apiRouter.use(checkIpBlacklist);
   apiRouter.use(getUserContext);
 
@@ -2036,7 +2007,7 @@ async function startServer() {
     }
   });
 
-  apiRouter.delete('/system/all', verifyAdminProtection, async (req, res) => {
+  apiRouter.delete('/system/all', async (req, res) => {
     const user = (req as any).user;
     if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
 
@@ -2651,7 +2622,7 @@ async function startServer() {
     }
   });
   
-  adminRouter.post('/users/:uid/professional-delete', verifyAdminProtection, async (req, res) => {
+  adminRouter.post('/users/:uid/professional-delete', async (req, res) => {
     const admin = (req as any).user;
     const { uid } = req.params;
     const { mode } = req.body; // 'cascade' | 'anonymize'
@@ -3178,7 +3149,7 @@ async function startServer() {
     }
   });
 
-  adminRouter.post('/backups/restore/:id', verifyAdminProtection, async (req, res) => {
+  adminRouter.post('/backups/restore/:id', async (req, res) => {
     try {
       // 1. SAFETY FIRST: Auto-Snapshot before restore
       console.log('⚠️ SAFETY FIRST: Creating auto-snapshot before restore...');
@@ -3669,7 +3640,7 @@ async function startServer() {
     }
   });
 
-  apiRouter.post('/system/restore', verifyAdminProtection, async (req, res) => {
+  apiRouter.post('/system/restore', async (req, res) => {
     const user = (req as any).user;
     if (user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
 

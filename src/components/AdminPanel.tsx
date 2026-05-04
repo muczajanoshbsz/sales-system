@@ -349,9 +349,9 @@ const AdminPanel: React.FC = () => {
       setDeleteModalOpen(false);
       setUserToDelete(null);
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Delete failed:', error);
-      showToast('Hiba a törlés során.', 'error');
+      showToast(`Hiba a törlés során: ${error.message}`, 'error');
     } finally {
       setIsDeleting(false);
     }
@@ -436,7 +436,67 @@ const AdminPanel: React.FC = () => {
   };
 
   const renderStats = () => (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* 🚀 HIGHLIGHTED SECURITY SECTION - MUST BE AT TOP */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-lg flex flex-col">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-600/20">
+                <Activity className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">RENDSZER INTEGRITÁS</h2>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Infrastruktúra és Kapcsolatok</p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end">
+              <Badge className="bg-emerald-500 text-white font-black px-4 py-1 rounded-full animate-pulse border-none shadow-lg shadow-emerald-500/20 uppercase text-[10px]">Active</Badge>
+              <span className="text-[10px] font-mono text-slate-400 mt-2">SRV-REF: 3.0.0</span>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 flex-1">
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+                <Database className="w-6 h-6 text-green-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Adatbázis</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Supabase Cloud (Sync)</p>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center">
+                <Brain className="w-6 h-6 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mesterséges Intelligencia</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Gemini 1.5 Professional</p>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+                <Mail className="w-6 h-6 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kommunikáció</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Enterprise SMTP/Resend</p>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                <Cloud className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Adattárolás</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Google Drive Vault</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
           <div className="flex justify-between items-start">
@@ -486,13 +546,13 @@ const AdminPanel: React.FC = () => {
         </Card>
       </div>
 
-      <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-3 mb-6">
-          <ShieldCheck className="w-6 h-6 text-indigo-600" />
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Rendszer Állapot</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="p-6 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-3 mb-6">
+            <ShieldCheck className="w-6 h-6 text-indigo-600" />
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Rendszer Állapot</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4">
             <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
               <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Adatbázis Kapcsolat</span>
               <Badge variant="success">Aktív</Badge>
@@ -503,19 +563,22 @@ const AdminPanel: React.FC = () => {
             </div>
             <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
               <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Rendszer Verzió</span>
-              <span className="text-xs font-mono text-slate-500">v2.4.0-admin</span>
+              <span className="text-xs font-mono text-indigo-600 font-bold">v3.0.0</span>
             </div>
           </div>
-          <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
-            <h4 className="text-sm font-bold text-indigo-900 dark:text-indigo-300 mb-2 uppercase tracking-wider">Admin Megjegyzés</h4>
-            <p className="text-xs text-indigo-700 dark:text-indigo-400 leading-relaxed">
-              Ez a felület a teljes rendszer felügyeletére szolgál. Itt láthatod az összes felhasználó tevékenységét, 
-              a globális készletet és eladásokat. A fő menüpontok (Dashboard, Készlet, Eladások) továbbra is csak a 
-              saját adataidat mutatják a zavartalan munkavégzés érdekében.
-            </p>
-          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+          <h4 className="text-sm font-bold text-indigo-900 dark:text-indigo-300 mb-2 uppercase tracking-wider">Admin Megjegyzés</h4>
+          <p className="text-xs text-indigo-700 dark:text-indigo-400 leading-relaxed">
+            Ez a felület a teljes rendszer felügyeletére szolgál. Itt láthatod az összes felhasználó tevékenységét, 
+            a globális készletet és eladásokat. A fő menüpontok (Dashboard, Készlet, Eladások) továbbra is csak a 
+            saját adataidat mutatják a zavartalan munkavégzés érdekében.
+          </p>
         </div>
-      </Card>
+      </div>
     </div>
   );
 
