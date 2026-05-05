@@ -613,6 +613,32 @@ export const apiService = {
     return await response.json();
   },
 
+  async getUserWeeklyReport(): Promise<any> {
+    const response = await fetch(`${API_BASE}/user/weekly-report`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async requestPersonalReport(): Promise<any> {
+    const response = await fetch(`${API_BASE}/user/reports/request`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async triggerAllReports(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/reports/trigger-all`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
   async testSendReport(): Promise<any> {
     const response = await fetch(`${API_BASE}/admin/reports/test-send`, {
       method: 'POST',

@@ -1799,6 +1799,19 @@ const AdminPanel: React.FC = () => {
   };
 
   const renderReports = () => {
+    const handleTriggerAll = async () => {
+      if (!window.confirm('Biztosan elindítod az ÖSSZES felhasználó heti jelentésének generálását? Ez több percig is eltarthat.')) return;
+      setTestLoading(true);
+      try {
+        await apiService.triggerAllReports();
+        showToast('🚀 A globális jelentési folyamat elindult a háttérben.', 'info');
+      } catch (error) {
+        showToast('❌ Hiba az indítás során: ' + (error as Error).message, 'error');
+      } finally {
+        setTestLoading(false);
+      }
+    };
+
     const handleTestSend = async () => {
       setTestLoading(true);
       try {
@@ -1850,16 +1863,28 @@ const AdminPanel: React.FC = () => {
               <span>{new Date(weeklyReport.start_date).toLocaleDateString('hu-HU')} - {new Date(weeklyReport.end_date).toLocaleDateString('hu-HU')}</span>
             </div>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleTestSend} 
-            disabled={testLoading}
-            className="gap-2 border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 h-11 px-6 rounded-xl text-indigo-600 font-bold"
-          >
-            <Send className={cn("w-4 h-4", testLoading && "animate-pulse")} />
-            {testLoading ? "Küldés..." : "Friss teszt jelentés küldése"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleTriggerAll} 
+              disabled={testLoading}
+              className="gap-2 border-amber-200 dark:border-amber-900/50 hover:bg-amber-50 dark:hover:bg-amber-900/20 h-11 px-6 rounded-xl text-amber-600 font-bold"
+            >
+              <Zap className={cn("w-4 h-4", testLoading && "animate-pulse")} />
+              Összes jelentés indítása
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleTestSend} 
+              disabled={testLoading}
+              className="gap-2 border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 h-11 px-6 rounded-xl text-indigo-600 font-bold"
+            >
+              <Send className={cn("w-4 h-4", testLoading && "animate-pulse")} />
+              {testLoading ? "Küldés..." : "Friss teszt jelentés küldése"}
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1881,7 +1906,7 @@ const AdminPanel: React.FC = () => {
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Heti Profit</p>
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-black text-white">
-                    {formatCurrency(data.financials?.totalProfit || 0)}
+                    {formatCurrency(data.totalProfit || 0)}
                   </span>
                   <TrendingUpIcon className="w-4 h-4 text-emerald-400" />
                 </div>
@@ -1891,7 +1916,7 @@ const AdminPanel: React.FC = () => {
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Eladott Mennyiség</p>
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-black text-white">
-                    {data.financials?.totalSales || 0} db
+                    {data.salesCount || 0} db
                   </span>
                   <ShoppingCart className="w-4 h-4 text-blue-400" />
                 </div>
@@ -1902,12 +1927,9 @@ const AdminPanel: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Award className="w-5 h-5 text-amber-400" />
                   <span className="text-sm font-bold text-white">
-                    {data.topProduct?.model || 'N/A'}
+                    {data.starProduct || 'N/A'}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2">
-                  {data.topProduct?.count || 0} eladás az elmúlt időszakban
-                </p>
               </div>
             </div>
           </Card>

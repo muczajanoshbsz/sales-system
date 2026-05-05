@@ -15,6 +15,7 @@ import AIDashboard from './components/AIDashboard';
 import BusinessAssistant from './components/BusinessAssistant';
 import SearchAnalytics from './components/SearchAnalytics';
 import SalesMap from './components/SalesMap';
+import UserReports from './components/UserReports';
 import Settings from './components/Settings';
 import AuditLogs from './components/AuditLogs';
 import AdminPanel from './components/AdminPanel';
@@ -228,6 +229,7 @@ const AppContent: React.FC = () => {
           <Route path="/ai" element={<ErrorBoundary><AIDashboard /></ErrorBoundary>} />
           <Route path="/assistant" element={<BusinessAssistant />} />
           <Route path="/map" element={<SalesMap />} />
+          <Route path="/reports" element={<UserReports />} />
           <Route path="/search" element={<SearchAnalytics />} />
           <Route path="/audit" element={<AuditLogs />} />
           <Route path="/calculator" element={<Calculator />} />
