@@ -118,6 +118,8 @@ const AdminPanel: React.FC = () => {
   const [deleteMode, setDeleteMode] = useState<'cascade' | 'anonymize'>('anonymize');
   const [isDeleting, setIsDeleting] = useState(false);
   const [localTimeout, setLocalTimeout] = useState<string>('15');
+  const [verifyingId, setVerifyingId] = useState<number | string | null>(null);
+  const [verificationResult, setVerificationResult] = useState<any>(null);
   const { enterGhostMode, enterTimeTravel } = useFirebase();
 
   useEffect(() => {
@@ -315,6 +317,18 @@ const AdminPanel: React.FC = () => {
       fetchData();
     } catch (error) {
       console.error('Error deleting model:', error);
+    }
+  };
+
+  const handleVerifyBackup = async (id: number | string) => {
+    setVerifyingId(id);
+    setVerificationResult(null);
+    try {
+      const result = await apiService.verifyBackup(id);
+      setVerificationResult(result);
+    } catch (error) {
+      showToast('Hiba a verifikáció során', 'error');
+      setVerifyingId(null);
     }
   };
 
@@ -1535,6 +1549,17 @@ const AdminPanel: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-amber-500 hover:bg-amber-50"
+                        onClick={() => handleVerifyBackup(backup.id)}
+                        disabled={verifyingId === backup.id}
+                        title="Integritás Ellenőrzés (Dry Run)"
+                      >
+                        {verifyingId === backup.id ? <LoadingSpinner size="sm" /> : <Search className="w-4 h-4" />}
+                      </Button>
+
                       {backup.type !== 'system' && (
                         <Button 
                           variant="ghost" 
@@ -2474,6 +2499,147 @@ const AdminPanel: React.FC = () => {
         )}
       </AnimatePresence>
       {renderVaultSetupModal()}
+
+      {/* Backup Verification Modal */}
+      <AnimatePresence>
+        {verificationResult && (
+          <div className="fixed inset-0 z-[11000] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setVerificationResult(null);
+                setVerifyingId(null);
+              }}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden relative z-10"
+            >
+              <div className="p-8">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className={cn(
+                    "w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg",
+                    verificationResult.isValid ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600" : "bg-red-100 dark:bg-red-900/30 text-red-600"
+                  )}>
+                    {verificationResult.isValid ? <ShieldCheck className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Mentés Ellenőrzése</h2>
+                    <div className="flex items-center gap-2">
+                       <p className="text-sm text-slate-500 font-mono text-xs">{verificationResult.filename}</p>
+                       {verificationResult.usedDrive && (
+                         <span className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[8px] font-black rounded uppercase tracking-tighter flex items-center gap-1">
+                           <Cloud className="w-2 h-2" /> Vault
+                         </span>
+                       )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={cn(
+                  "p-4 rounded-2xl border mb-6",
+                  verificationResult.isValid 
+                    ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-900/30 text-emerald-800 dark:text-emerald-300" 
+                    : "bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30 text-red-800 dark:text-red-300"
+                )}>
+                  <div className="flex gap-3 items-center">
+                    {verificationResult.isValid ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+                    <div>
+                      <p className="text-sm font-bold uppercase tracking-wide">
+                        {verificationResult.isValid ? 'Visszaállítható: IGEN' : 'Visszaállítható: NEM'}
+                      </p>
+                      <p className="text-xs opacity-80">
+                        {verificationResult.isValid 
+                          ? `A mentés szerkezete ép, forrás: ${verificationResult.source || 'Ismeretlen'}` 
+                          : `Hiba: ${verificationResult.error || 'Ismeretlen hiba a validáció során.'}`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Verification Logs */}
+                <div className="mb-6 space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Verifikációs Napló:</p>
+                  <div className="space-y-1">
+                    {verificationResult.steps?.map((step: any, idx: number) => (
+                      <div key={idx} className="flex gap-2 items-start text-[10px] font-mono p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                        <span className={cn(
+                          "shrink-0 w-1.5 h-1.5 rounded-full mt-1",
+                          step.type === 'success' ? 'bg-emerald-500' :
+                          step.type === 'error' ? 'bg-red-500' :
+                          step.type === 'warning' ? 'bg-amber-500' : 'bg-slate-400 shadow-sm'
+                        )} />
+                        <span className="text-slate-400 whitespace-nowrap">{new Date(step.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                        <span className="text-slate-600 dark:text-slate-300 leading-tight">{step.msg}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {verificationResult.isValid && (
+                  <div className="space-y-4 mb-8">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Adatstruktúra statisztika:</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {Object.entries(verificationResult.stats).map(([table, count]) => (
+                        <div key={table} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate">{table}</p>
+                          <p className="text-lg font-black text-slate-900 dark:text-white">{count as number} <span className="text-[10px] text-slate-400 font-normal">sor</span></p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-900/20">
+                      <p className="text-[10px] text-indigo-700 dark:text-indigo-400 font-bold leading-tight">
+                        ℹ️ Ez egy Dry Run ellenőrzés volt. Nem módosítottunk semmit az éles adatbázisban. A mentés készen áll a visszaállításra.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <Button 
+                    variant="ghost"
+                    className="flex-1 py-4 uppercase tracking-widest text-[10px] font-black"
+                    onClick={() => {
+                      setVerificationResult(null);
+                      setVerifyingId(null);
+                    }}
+                  >
+                    Vissza
+                  </Button>
+                  {verificationResult.isValid && (
+                    <Button 
+                      variant="primary"
+                      className="flex-1 py-4 uppercase tracking-widest text-[10px] font-black bg-indigo-600 text-white shadow-lg shadow-indigo-200"
+                      onClick={async () => {
+                        const id = verifyingId;
+                        setVerificationResult(null);
+                        setVerifyingId(null);
+                        if (confirm('Biztosan visszaállítod a rendszert ebből a mentésből? Az aktuális adatok felülíródnak!')) {
+                          try {
+                            showToast('Visszaállítás folyamatban...', 'info');
+                            await apiService.restoreBackup(id as any);
+                            showToast('Rendszer sikeresen visszaállítva!', 'success');
+                            fetchData();
+                          } catch (e) {
+                            showToast('Hiba a visszaállítás során', 'error');
+                          }
+                        }
+                      }}
+                    >
+                      Visszaállítás
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

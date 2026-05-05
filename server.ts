@@ -3049,6 +3049,36 @@ async function startServer() {
     return { id: fileInfo.id, webViewLink: linkData.webViewLink, checksum };
   }
 
+  async function downloadFromGoogleDrive(fileId: string): Promise<string> {
+    const client_id = process.env.GOOGLE_DRIVE_CLIENT_ID;
+    const client_secret = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
+    const refresh_token = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+
+    if (!client_id || !client_secret || !refresh_token) {
+      throw new Error('Google Drive credentials missing');
+    }
+
+    // 1. Get Access Token
+    const authRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `client_id=${client_id}&client_secret=${client_secret}&refresh_token=${refresh_token}&grant_type=refresh_token`
+    });
+    
+    const authData = await authRes.json() as any;
+    if (!authData.access_token) throw new Error('Failed to refresh Google Drive token');
+    const accessToken = authData.access_token;
+
+    // 2. Download File
+    const downloadRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    if (!downloadRes.ok) throw new Error(`Google Drive download failed: ${downloadRes.status}`);
+    
+    return await downloadRes.text();
+  }
+
   adminRouter.post('/backups/vault-upload/:id', async (req, res) => {
     try {
       const { id } = req.params;
@@ -3202,6 +3232,128 @@ async function startServer() {
     }
   });
 
+  adminRouter.post('/backups/verify/:id', async (req, res) => {
+    const steps: { msg: string; type: 'info' | 'success' | 'error' | 'warning'; time: string }[] = [];
+    const addStep = (msg: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
+      steps.push({ msg, type, time: new Date().toISOString() });
+    };
+
+    try {
+      const { id } = req.params;
+      addStep('Verifikációs folyamat elindítva...', 'info');
+      
+      const backupRows = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
+      if (!backupRows.length) {
+        addStep('Hiba: Mentés nem található az adatbázisban.', 'error');
+        return res.status(404).json({ error: 'Mentés nem található', steps });
+      }
+      const backup = backupRows[0];
+      addStep(`Mentés metaadatok betöltve: ${backup.filename}`, 'success');
+
+      let rawData = backup.data;
+      let usedDrive = false;
+      let source: 'Database' | 'Disk' | 'Google Drive' = 'Database';
+
+      // 1. Data Retrieval (DB -> Disk -> Drive)
+      if (!rawData) {
+        const filePath = path.join(BACKUP_DIR, backup.filename);
+        if (fs.existsSync(filePath)) {
+          addStep('Adatok keresése a helyi tárolón (Disk)...', 'info');
+          rawData = fs.readFileSync(filePath, 'utf8');
+          source = 'Disk';
+          addStep('Adatok sikeresen betöltve a lemezről.', 'success');
+        } else {
+          // Check Drive if metadata exists
+          let meta = backup.metadata || {};
+          if (typeof meta === 'string') try { meta = JSON.parse(meta); } catch(e) {}
+          
+          if (meta.googleDriveId) {
+            addStep('Adatok nem találhatók helyben. Google Drive (Vault) lekérése...', 'warning');
+            rawData = await downloadFromGoogleDrive(meta.googleDriveId);
+            usedDrive = true;
+            source = 'Google Drive';
+            addStep('Adatok sikeresen letöltve a felhőből.', 'success');
+          } else {
+            addStep('Hiba: Adatforrás nem azonosítható (nincs DB-ben, lemezen vagy Drive-on).', 'error');
+            return res.json({ isValid: false, error: 'A mentés adatai nem találhatók.', steps });
+          }
+        }
+      } else {
+        addStep('Adatok betöltve közvetlenül az adatbázisból.', 'success');
+      }
+      
+      let snapshot;
+      addStep(`Formátum azonosítva: ${backup.format === 'enc_zip' ? 'System Snapshot (ZIP)' : 'Standard Backup (ENC)'}`, 'info');
+      
+      try {
+        addStep('Titkosítás feloldása és dekódolás...', 'info');
+        if (backup.format === 'enc') {
+          snapshot = JSON.parse(decrypt(rawData));
+        } else if (backup.format === 'enc_zip') {
+          const decryptedBase64 = decrypt(rawData);
+          const zipBuffer = Buffer.from(decryptedBase64, 'base64');
+          const zip = new AdmZip(zipBuffer);
+          const dumpEntry = zip.getEntry('database_snapshot.json');
+          if (!dumpEntry) {
+            addStep('Hiba: database_snapshot.json hiányzik a ZIP csomagból!', 'error');
+            return res.json({ isValid: false, error: 'Hibás struktúra: A database_snapshot.json nem található.', steps });
+          }
+          snapshot = JSON.parse(dumpEntry.getData().toString('utf8'));
+        } else {
+          snapshot = JSON.parse(rawData);
+        }
+        addStep('Dekódolás sikeres.', 'success');
+      } catch (e) {
+        addStep(`Dekódolási hiba: ${(e as Error).message}`, 'error');
+        return res.json({ 
+          isValid: false, 
+          error: 'Dekódolási hiba: A titkosító kulcs vagy a fájl formátuma nem megfelelő.',
+          steps
+        });
+      }
+
+      addStep('Adatbázis táblák integritásának ellenőrzése...', 'info');
+      const tables = ['audit_logs', 'market_prices', 'pending_sales', 'sales', 'stock', 'product_models', 'users'];
+      const stats: any = {};
+      let totalRows = 0;
+      let missingTables = [];
+
+      for (const table of tables) {
+        if (snapshot[table] && Array.isArray(snapshot[table])) {
+          stats[table] = snapshot[table].length;
+          totalRows += snapshot[table].length;
+        } else {
+          missingTables.push(table);
+        }
+      }
+
+      if (missingTables.length > 0) {
+        addStep(`Figyelmeztetés: Hiányzó táblák: ${missingTables.join(', ')}`, 'warning');
+      } else {
+        addStep('Minden kötelező tábla Validálva.', 'success');
+      }
+
+      addStep('Verifikáció sikeresen befejeződött.', 'success');
+
+      res.json({
+        isValid: missingTables.length === 0,
+        totalRows,
+        stats,
+        missingTables,
+        filename: backup.filename,
+        createdAt: backup.created_at,
+        type: backup.type,
+        format: backup.format,
+        usedDrive,
+        source,
+        steps
+      });
+    } catch (error) {
+      addStep(`Kritikus hiba: ${(error as Error).message}`, 'error');
+      res.status(500).json({ error: (error as Error).message, steps });
+    }
+  });
+
   adminRouter.post('/backups/restore/:id', async (req, res) => {
     try {
       // 1. SAFETY FIRST: Auto-Snapshot before restore
@@ -3214,22 +3366,38 @@ async function startServer() {
     const client = await pool.connect();
     try {
       const { id } = req.params;
-      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
-      if (!backup.length) return res.status(404).json({ error: 'Backup not found' });
+      const backupRows = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
+      if (!backupRows.length) return res.status(404).json({ error: 'Mentés nem található' });
+      const backup = backupRows[0];
 
-      let rawData = backup[0].data;
+      let rawData = backup.data;
       if (!rawData) {
-        const filePath = path.join(BACKUP_DIR, backup[0].filename);
+        const filePath = path.join(BACKUP_DIR, backup.filename);
         if (fs.existsSync(filePath)) {
           rawData = fs.readFileSync(filePath, 'utf8');
         } else {
-          return res.status(404).json({ error: 'Backup data missing' });
+          let meta = backup.metadata || {};
+          if (typeof meta === 'string') try { meta = JSON.parse(meta); } catch(e) {}
+          
+          if (meta.googleDriveId) {
+            console.log(`☁️ Restoring ${backup.filename} via Google Drive download...`);
+            rawData = await downloadFromGoogleDrive(meta.googleDriveId);
+          } else {
+            return res.status(404).json({ error: 'A mentés adatai nem találhatók.' });
+          }
         }
       }
       
       let snapshot;
-      if (backup[0].format === 'enc') {
+      if (backup.format === 'enc') {
         snapshot = JSON.parse(decrypt(rawData));
+      } else if (backup.format === 'enc_zip') {
+        const decryptedBase64 = decrypt(rawData);
+        const zipBuffer = Buffer.from(decryptedBase64, 'base64');
+        const zip = new AdmZip(zipBuffer);
+        const dumpEntry = zip.getEntry('database_snapshot.json');
+        if (!dumpEntry) throw new Error('database_snapshot.json missing in archive');
+        snapshot = JSON.parse(dumpEntry.getData().toString('utf8'));
       } else {
         snapshot = JSON.parse(rawData);
       }

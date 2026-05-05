@@ -450,7 +450,16 @@ export const apiService = {
     return await response.json();
   },
 
-  async restoreBackup(id: number): Promise<void> {
+  async verifyBackup(id: number | string): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/backups/verify/${id}`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async restoreBackup(id: number | string): Promise<void> {
     const response = await fetch(`${API_BASE}/admin/backups/restore/${id}`, {
       method: 'POST',
       headers: getHeaders(),
