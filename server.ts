@@ -3716,14 +3716,14 @@ async function startServer() {
         Rules:
         1. Always respond in Hungarian.
         2. "tips" should have: type (marketing, stock, strategy), content (markdown).
-        3. "flags" should have: entity_type (sale, stock, system), severity (low, medium, high), description, suggestion.
+        3. "flags" should have: entity_type (sale, stock, system), issue_type (anomaly, risk, security), severity (low, medium, high), description, suggestion.
 
         Data: ${JSON.stringify(context)}
 
         Return ONLY a JSON object:
         {
           "tips": [{ "type": "...", "content": "..." }],
-          "flags": [{ "entity_type": "...", "severity": "...", "description": "...", "suggestion": "..." }]
+          "flags": [{ "entity_type": "...", "issue_type": "...", "severity": "...", "description": "...", "suggestion": "..." }]
         }
       `;
 
@@ -3753,9 +3753,16 @@ async function startServer() {
 
           if (existing.length === 0) {
             await runExec(pool, `
-              INSERT INTO data_audit_flags (entity_type, severity, description, suggestion, metadata)
-              VALUES (?, ?, ?, ?, ?)
-            `, [flag.entity_type, flag.severity, flag.description, flag.suggestion, JSON.stringify({ generatedAt: new Date().toISOString() })]);
+              INSERT INTO data_audit_flags (entity_type, issue_type, severity, description, suggestion, metadata)
+              VALUES (?, ?, ?, ?, ?, ?)
+            `, [
+              flag.entity_type, 
+              flag.issue_type || 'anomaly', 
+              flag.severity, 
+              flag.description, 
+              flag.suggestion, 
+              JSON.stringify({ generatedAt: new Date().toISOString() })
+            ]);
           }
         }
       }
