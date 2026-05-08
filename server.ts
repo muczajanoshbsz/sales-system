@@ -25,7 +25,32 @@ import AdmZip from 'adm-zip';
 import jwt from 'jsonwebtoken';
 import { UAParser } from 'ua-parser-js';
 
+import firebaseAdmin from 'firebase-admin';
+
 dotenv.config();
+
+// Initialize Firebase Admin with enhanced credential handling
+try {
+  let adminConfig: any = {
+    projectId: 'valued-aleph-489707-s4'
+  };
+
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      adminConfig.credential = firebaseAdmin.credential.cert(serviceAccount);
+      console.log('🛡️ Firebase Admin: Initialized with Service Account from ENV.');
+    } catch (parseErr) {
+      console.error('❌ Firebase Admin: Failed to parse FIREBASE_SERVICE_ACCOUNT JSON:', parseErr);
+    }
+  } else {
+    console.warn('⚠️ Firebase Admin: FIREBASE_SERVICE_ACCOUNT env var missing. Falling back to default credentials.');
+  }
+
+  firebaseAdmin.initializeApp(adminConfig);
+} catch (initErr) {
+  console.error('❌ Firebase Admin: Initialization failed:', initErr);
+}
 
 const { Pool } = pg;
 
@@ -2760,6 +2785,15 @@ async function startServer() {
         ]);
         // Note: For audit logs, we might want to keep the record but anonymize the ID
         await runExec(pool, 'UPDATE audit_logs SET "userId" = ? WHERE "userId" = ?', ['deleted-user', uid]);
+      }
+
+      // 5. DELETE FROM FIREBASE AUTH (The "Real" Delete)
+      try {
+        await firebaseAdmin.auth().deleteUser(uid);
+        console.log(`🛡️ Professional Delete: User ${uid} removed from Firebase Auth.`);
+      } catch (authErr) {
+        // If user already deleted from Auth, we don't want to crash the whole process
+        console.warn(`⚠️ Firebase Auth delete failed for ${uid} (likely already gone):`, authErr);
       }
 
       // 5. Immutable Audit Log Entry
