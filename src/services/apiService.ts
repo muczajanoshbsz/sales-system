@@ -433,6 +433,14 @@ export const apiService = {
   },
 
   // Backups
+  async getBackupStats(): Promise<any> {
+    const response = await fetch(`${API_BASE}/admin/backups/stats`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
   async getBackups(): Promise<any[]> {
     const response = await fetch(`${API_BASE}/admin/backups`, {
       headers: getHeaders(),
@@ -459,10 +467,11 @@ export const apiService = {
     return await response.json();
   },
 
-  async restoreBackup(id: number | string): Promise<void> {
+  async restoreBackup(id: number | string, targetTables?: string[]): Promise<void> {
     const response = await fetch(`${API_BASE}/admin/backups/restore/${id}`, {
       method: 'POST',
       headers: getHeaders(),
+      body: JSON.stringify({ targetTables }),
     });
     await handleResponse(response);
   },

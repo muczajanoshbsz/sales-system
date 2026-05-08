@@ -58,6 +58,8 @@ import {
   Monitor,
   Smartphone,
   Tablet,
+  Timer,
+  Undo2,
   Globe,
   MapPin,
   Cpu
@@ -81,8 +83,36 @@ const AdminPanel: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get('tab') as Tab) || 'stats';
   const setActiveTab = (tab: Tab) => setSearchParams({ tab });
-
   const [loading, setLoading] = useState(true);
+  const [selectedTables, setSelectedTables] = useState<string[]>(['audit_logs', 'market_prices', 'pending_sales', 'sales', 'stock', 'product_models', 'users']);
+  const [selectiveRestoreBackupId, setSelectiveRestoreBackupId] = useState<number | null>(null);
+
+  const ALL_TABLE_NAMES = [
+    { id: 'users', label: 'Felhasználók' },
+    { id: 'product_models', label: 'Termék Katalógus' },
+    { id: 'stock', label: 'Készlet' },
+    { id: 'sales', label: 'Eladások' },
+    { id: 'pending_sales', label: 'Függőben lévő Eladások' },
+    { id: 'audit_logs', label: 'Audit Naplók' },
+    { id: 'market_prices', label: 'Piaci Árak' }
+  ];
+
+  const handleRestore = async (backupId: number, tables?: string[]) => {
+    const tableList = tables || ['audit_logs', 'market_prices', 'pending_sales', 'sales', 'stock', 'product_models', 'users'];
+    if (!window.confirm(`BIZTOS VISSZAÁLLÍTÁS?\n\nEz a művelet felülírja a jelenlegi adatbázist a kiválasztott táblákban: ${tableList.join(', ')}`)) return;
+    
+    setLoading(true);
+    try {
+      await apiService.restoreBackup(backupId, tables);
+      showToast('Visszaállítás sikeres', 'success');
+      setSelectiveRestoreBackupId(null);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error) {
+      showToast(`Visszaállítás hiba: ${(error as Error).message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
@@ -90,6 +120,7 @@ const AdminPanel: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [catalogModels, setCatalogModels] = useState<ProductModel[]>([]);
   const [backups, setBackups] = useState<any[]>([]);
+  const [backupStats, setBackupStats] = useState<any>(null);
   const [weeklyReport, setWeeklyReport] = useState<any>(null);
   const [aiTips, setAiTips] = useState<any[]>([]);
   const [auditFlags, setAuditFlags] = useState<any[]>([]);
@@ -224,12 +255,14 @@ const AdminPanel: React.FC = () => {
           setCatalogModels(catalogData);
           break;
         case 'backups':
-          const [backupsData, configsData] = await Promise.all([
+          const [backupsData, configsData, bStatsData] = await Promise.all([
             apiService.getBackups(),
-            apiService.getSystemConfigs()
+            apiService.getSystemConfigs(),
+            apiService.getBackupStats()
           ]);
           setBackups(backupsData);
           setConfigs(configsData);
+          setBackupStats(bStatsData);
           break;
         case 'reports':
           const reportData = await apiService.getWeeklyReport();
@@ -1282,6 +1315,79 @@ const AdminPanel: React.FC = () => {
 
   const renderBackups = () => (
     <div className="space-y-8">
+      {/* Silent Guardian Status Card */}
+      {backupStats && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="p-5 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+               <ShieldCheck className="w-16 h-16" />
+            </div>
+            <div className="relative z-10">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Csendes Őr Monitor</p>
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter shadow-sm",
+                  backupStats.summary.failed_count > 0 
+                    ? "bg-rose-50 text-rose-600 border border-rose-100 animate-pulse" 
+                    : "bg-emerald-50 text-emerald-600 border border-emerald-100"
+                )}>
+                  <Bot className="w-3.5 h-3.5" />
+                  {backupStats.summary.failed_count > 0 ? 'Hiba Észlelve!' : 'Rendszer Biztonságos'}
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-6">
+                 <div>
+                   <p className="text-3xl font-black text-slate-900 dark:text-white leading-none mb-1">{backupStats.summary.verified_count}</p>
+                   <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tight">Validált Akták</p>
+                 </div>
+                 <div>
+                   <p className={cn("text-3xl font-black leading-none mb-1", backupStats.summary.failed_count > 0 ? "text-rose-600" : "text-slate-900 dark:text-white")}>
+                     {backupStats.summary.failed_count}
+                   </p>
+                   <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tight">Sérült Mentés</p>
+                 </div>
+              </div>
+            </div>
+          </div>
+
+          {backupStats.recentFailures && backupStats.recentFailures.length > 0 ? (
+            <div className="md:col-span-2 p-5 bg-rose-50 border border-rose-100 rounded-3xl overflow-hidden relative">
+              <div className="absolute top-0 right-0 p-5 opacity-10">
+                 <AlertTriangle className="w-20 h-20 text-rose-600" />
+              </div>
+              <div className="relative z-10">
+                <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                   <AlertCircle className="w-4 h-4" /> Kritikus Integritási Riport
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {backupStats.recentFailures.map((failure: any) => (
+                    <div key={failure.id} className="flex items-center justify-between text-[11px] bg-white/60 p-3 rounded-2xl border border-rose-200 backdrop-blur-sm">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-rose-700 truncate max-w-[120px]">{failure.filename}</span>
+                        <span className="text-[9px] text-rose-500">{new Date(failure.created_at).toLocaleDateString('hu-HU')}</span>
+                      </div>
+                      <div className="text-right">
+                         <span className="font-mono text-[9px] font-black text-rose-800 bg-rose-200 px-2 py-0.5 rounded-full">{failure.error?.substring(0, 20) || 'Hiba'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="md:col-span-2 p-5 bg-emerald-50/30 border border-emerald-100/50 rounded-3xl flex items-center justify-center text-center">
+               <div className="space-y-2">
+                 <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                    <ShieldCheck className="w-6 h-6" />
+                 </div>
+                 <h4 className="text-sm font-black text-emerald-900 tracking-tight">Minden mentés érvényes</h4>
+                 <p className="text-[10px] text-emerald-700 max-w-xs mx-auto">Az utolsó automata ellenőrzések nem találtak adatvesztést vagy struktúrális hibát.</p>
+               </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="p-6 bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-900/30">
           <div className="flex items-center gap-4 mb-4">
@@ -1497,17 +1603,28 @@ const AdminPanel: React.FC = () => {
                 <th className="px-6 py-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest">Műveletek</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {Array.isArray(backups) && backups.map((backup) => (
-                <tr key={backup.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-slate-900 dark:text-white">
-                        {new Date(backup.created_at).toLocaleString('hu-HU')}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-mono">{backup.filename}</span>
-                    </div>
-                  </td>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {Array.isArray(backups) && backups.map((backup) => (
+                  <tr key={backup.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${
+                          backup.verified === true ? 'bg-emerald-50 text-emerald-600' :
+                          backup.verified === false ? 'bg-rose-50 text-rose-600' :
+                          'bg-slate-50 text-slate-400'
+                        }`} title={backup.verified === true ? 'Integritás Validálva' : backup.verified === false ? 'Validáció SIKERTELEN' : 'Nincs validálva'}>
+                           {backup.verified === true ? <ShieldCheck className="w-4 h-4" /> : 
+                            backup.verified === false ? <ShieldAlert className="w-4 h-4" /> : 
+                            <History className="w-4 h-4" />}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-slate-900 dark:text-white">
+                            {new Date(backup.created_at).toLocaleString('hu-HU')}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">{backup.filename}</span>
+                        </div>
+                      </div>
+                    </td>
                   <td className="px-6 py-4">
                       {(() => {
                         const meta = safeParseMetadata(backup.metadata);
@@ -1678,25 +1795,29 @@ const AdminPanel: React.FC = () => {
                       })()}
 
                       {backup.type !== 'system' && (
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="text-red-600 hover:bg-red-50"
-                          onClick={async () => {
-                            if (confirm('FIGYELEM! A rendszer visszaállítása felülírja a jelenlegi adatokat. Biztosan folytatod?')) {
-                              try {
-                                await apiService.restoreBackup(backup.id);
-                                alert('Rendszer sikeresen visszaállítva');
-                                window.location.reload();
-                              } catch (error) {
-                                alert('Visszaállítás sikertelen');
-                              }
-                            }
-                          }}
-                          title="Visszaállítás"
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-indigo-600 hover:bg-indigo-50"
+                            onClick={() => {
+                              setSelectiveRestoreBackupId(backup.id);
+                              setSelectedTables(['audit_logs', 'market_prices', 'pending_sales', 'sales', 'stock', 'product_models', 'users']);
+                            }}
+                            title="Szelektív Visszaállítás"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-red-600 hover:bg-red-50"
+                            onClick={() => handleRestore(backup.id)}
+                            title="Teljes Visszaállítás"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </td>
@@ -1725,6 +1846,68 @@ const AdminPanel: React.FC = () => {
           </p>
         </div>
       </div>
+
+      <Modal
+        isOpen={selectiveRestoreBackupId !== null}
+        onClose={() => setSelectiveRestoreBackupId(null)}
+        title="Szelektív Visszaállítás"
+      >
+        <div className="space-y-6">
+          <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-900/30">
+            <p className="text-xs text-indigo-700 dark:text-indigo-400 leading-relaxed font-medium">
+              Válaszd ki azokat a táblákat, amelyeket vissza szeretnél állítani. A nem kiválasztott táblák érintetlenek maradnak a jelenlegi adatbázisban.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Választható adattáblák:</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {ALL_TABLE_NAMES.map((table) => (
+                <label 
+                  key={table.id}
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer",
+                    selectedTables.includes(table.id)
+                      ? "bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800"
+                      : "bg-white border-slate-100 dark:bg-slate-900 dark:border-slate-800 opacity-60 grayscale"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedTables.includes(table.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedTables([...selectedTables, table.id]);
+                      } else {
+                        setSelectedTables(selectedTables.filter(id => id !== table.id));
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{table.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button 
+              variant="outline" 
+              className="flex-1" 
+              onClick={() => setSelectiveRestoreBackupId(null)}
+            >
+              Mégsem
+            </Button>
+            <Button 
+              className="flex-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black"
+              disabled={selectedTables.length === 0}
+              onClick={() => selectiveRestoreBackupId && handleRestore(selectiveRestoreBackupId, selectedTables)}
+            >
+              Választottak Visszaállítása
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 
@@ -2583,7 +2766,15 @@ const AdminPanel: React.FC = () => {
 
                 {verificationResult.isValid && (
                   <div className="space-y-4 mb-8">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Adatstruktúra statisztika:</p>
+                    <div className="flex items-center justify-between px-2">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Adatstruktúra statisztika:</p>
+                       <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 rounded-lg">
+                         <Timer className="w-3 h-3 text-amber-600" />
+                         <span className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-tighter">
+                           Becsült helyreállítás: ~{Math.ceil(verificationResult.estimatedRecoveryTimeMs / 1000)} mp
+                         </span>
+                       </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       {Object.entries(verificationResult.stats).map(([table, count]) => (
                         <div key={table} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
@@ -2592,6 +2783,24 @@ const AdminPanel: React.FC = () => {
                         </div>
                       ))}
                     </div>
+
+                    {verificationResult.inconsistencies && verificationResult.inconsistencies.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest px-2 mb-2">Mélyelemzés (Inkonzisztencia):</p>
+                        <div className="space-y-2">
+                          {verificationResult.inconsistencies.map((inc: any, i: number) => (
+                            <div key={i} className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/30 rounded-xl flex items-start gap-3">
+                               <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                               <div className="flex flex-col">
+                                 <span className="text-[11px] font-bold text-rose-700 dark:text-rose-400">{inc.msg}</span>
+                                 <span className="text-[9px] text-rose-500 uppercase font-bold">{inc.table} tábla</span>
+                               </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-900/20">
                       <p className="text-[10px] text-indigo-700 dark:text-indigo-400 font-bold leading-tight">
                         ℹ️ Ez egy Dry Run ellenőrzés volt. Nem módosítottunk semmit az éles adatbázisban. A mentés készen áll a visszaállításra.
