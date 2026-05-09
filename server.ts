@@ -2547,6 +2547,26 @@ async function startServer() {
     
     const encryptedData = encrypt(zipBuffer.toString('base64'));
     
+    // Optional: Upload to Google Drive and clear local data to save DB space
+    let driveInfo = null;
+    let finalDataToStore: string | null = encryptedData;
+    let vaultStatus = 'none';
+
+    if (process.env.GOOGLE_DRIVE_REFRESH_TOKEN) {
+      try {
+        console.log('☁️ Auto-uploading system artifact to Google Drive Vault...');
+        driveInfo = await uploadToGoogleDrive(filename, encryptedData);
+        // If successfully uploaded to Drive, we can skip storing the massive blob in DB
+        // But we keep it in metadata to know where to find it
+        finalDataToStore = null; 
+        vaultStatus = 'completed';
+        console.log('✅ System artifact uploaded to Drive. DB storage optimized (meta-only).');
+      } catch (driveErr) {
+        console.error('❌ Auto-upload to Drive failed. Falling back to DB storage:', driveErr);
+        vaultStatus = 'failed';
+      }
+    }
+
     // Store in DB
     const result = await runQuery(pool, `
       INSERT INTO backups (filename, size, type, format, created_by, metadata, data)
@@ -2558,11 +2578,19 @@ async function startServer() {
       'system',
       'enc_zip',
       createdBy,
-      JSON.stringify({ isSystemArtifact: true, tableCount: tables.length }),
-      encryptedData
+      JSON.stringify({ 
+        isSystemArtifact: true, 
+        tableCount: tables.length,
+        googleDriveId: driveInfo?.id,
+        googleDriveLink: driveInfo?.webViewLink,
+        checksum: driveInfo?.checksum,
+        vaultStatus,
+        uploadedAt: driveInfo ? new Date().toISOString() : null
+      }),
+      finalDataToStore
     ]);
 
-    console.log('✅ System artifact generated and stored in database.');
+    console.log('✅ System artifact generated and stored.');
     return result[0];
   }
 
@@ -2915,6 +2943,18 @@ async function startServer() {
     }
   });
 
+  adminRouter.delete('/backups/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      await runExec(pool, 'DELETE FROM backups WHERE id = ?', [id]);
+      const user = (req as any).user;
+      await logActivity(user.uid, 'Backup deleted', `Backup ID ${id} was deleted from records`, req);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   adminRouter.get('/weekly-report', async (_req, res) => {
     try {
       const reports = await runQuery(pool, 'SELECT * FROM weekly_reports WHERE is_global = TRUE ORDER BY created_at DESC LIMIT 1');
@@ -3006,16 +3046,31 @@ async function startServer() {
   adminRouter.get('/backups/download-artifact/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const backup = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
-      if (!backup.length || backup[0].format !== 'enc_zip') {
+      const backupRows = await runQuery(pool, 'SELECT * FROM backups WHERE id = ?', [id]);
+      if (!backupRows.length || backupRows[0].format !== 'enc_zip') {
         return res.status(404).json({ error: 'Artifact not found' });
       }
 
-      const decryptedBase64 = decrypt(backup[0].data);
+      const backup = backupRows[0];
+      let rawData = backup.data;
+
+      if (!rawData) {
+        let meta = backup.metadata || {};
+        if (typeof meta === 'string') try { meta = JSON.parse(meta); } catch(e) {}
+        
+        if (meta.googleDriveId) {
+          console.log(`☁️ Downloading artifact ${backup.filename} from Google Drive...`);
+          rawData = await downloadFromGoogleDrive(meta.googleDriveId);
+        } else {
+          return res.status(404).json({ error: 'Artifact data missing and not on Drive' });
+        }
+      }
+
+      const decryptedBase64 = decrypt(rawData);
       const zipBuffer = Buffer.from(decryptedBase64, 'base64');
 
       res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Disposition', `attachment; filename="${backup[0].filename.replace('.enc', '')}"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${backup.filename.replace('.enc', '')}"`);
       res.send(zipBuffer);
     } catch (error) {
       console.error('Artifact download failed:', error);
@@ -3182,11 +3237,12 @@ async function startServer() {
           const uploadResult = await uploadToGoogleDrive(backupRows[0].filename, backupRows[0].data);
           
           // Re-fetch to ensure we have the latest metadata before updating
-          const currentRows = await runQuery(pool, 'SELECT metadata FROM backups WHERE id = ?', [id]);
+          const currentRows = await runQuery(pool, 'SELECT metadata, type FROM backups WHERE id = ?', [id]);
           let updatedMetadata = currentRows[0].metadata || {};
           if (typeof updatedMetadata === 'string') try { updatedMetadata = JSON.parse(updatedMetadata); } catch(e) {}
 
-          await runExec(pool, 'UPDATE backups SET metadata = ? WHERE id = ?', [
+          const isSnapshot = updatedMetadata.isSystemArtifact || currentRows[0].type === 'system';
+          await runExec(pool, `UPDATE backups SET metadata = ? ${isSnapshot ? ', data = NULL' : ''} WHERE id = ?`, [
             JSON.stringify({ 
                 ...updatedMetadata, 
                 googleDriveId: uploadResult.id, 
@@ -3561,14 +3617,14 @@ async function startServer() {
 
       await client.query('COMMIT');
       const user = (req as any).user;
-      await logActivity(user.uid, 'System Restored', `System restored from backup: ${backup[0].filename}`, req);
+      await logActivity(user.uid, 'System Restored', `System restored from backup: ${backup.filename}`, req);
       
       // Notify admin via Email
       await sendSystemEmail(
         'Sikeres Visszaállítás',
         '✅ Rendszer sikeresen visszaállítva',
-        `A rendszert sikeresen visszaállítottuk a következő mentésből: <b>${backup[0].filename}</b>.<br>A frissítő művelet előtt a biztonság kedvéért automatikus Snapshot mentés készült minden adatról és a szerver kódjáról is.`,
-        { backupId: backup[0].id, type: backup[0].type, restoredAt: new Date().toISOString() }
+        `A rendszert sikeresen visszaállítottuk a következő mentésből: <b>${backup.filename}</b>.<br>A frissítő művelet előtt a biztonság kedvéért automatikus Snapshot mentés készült minden adatról és a szerver kódjáról is.`,
+        { backupId: backup.id, type: backup.type, restoredAt: new Date().toISOString() }
       );
 
       res.json({ success: true });

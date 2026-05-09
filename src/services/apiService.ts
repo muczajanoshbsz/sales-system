@@ -507,6 +507,14 @@ export const apiService = {
     }
   },
 
+  async deleteBackup(id: number | string): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/backups/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+  },
+
   async createSystemArtifact(): Promise<any> {
     const response = await fetch(`${API_BASE}/admin/backups/system-artifact`, {
       method: 'POST',

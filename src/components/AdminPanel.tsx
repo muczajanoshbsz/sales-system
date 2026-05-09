@@ -113,6 +113,17 @@ const AdminPanel: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const handleDeleteBackup = async (id: number) => {
+    if (!window.confirm('Biztosan törölni szeretnéd ezt a mentést? A rekord véglegesen eltűnik.')) return;
+    try {
+      await apiService.deleteBackup(id);
+      showToast('Mentés törölve', 'success');
+      fetchData();
+    } catch (error) {
+      showToast('Hiba a törlés során', 'error');
+    }
+  };
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
@@ -1669,156 +1680,132 @@ const AdminPanel: React.FC = () => {
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="text-amber-500 hover:bg-amber-50"
+                        className="h-8 w-8 p-0 text-amber-500 hover:bg-amber-50"
                         onClick={() => handleVerifyBackup(backup.id)}
                         disabled={verifyingId === backup.id}
-                        title="Integritás Ellenőrzés (Dry Run)"
+                        title="Integritás Ellenőrzés"
                       >
-                        {verifyingId === backup.id ? <LoadingSpinner size="sm" /> : <Search className="w-4 h-4" />}
+                        {verifyingId === backup.id ? <LoadingSpinner size="sm" /> : <ShieldCheck className="w-4 h-4" />}
                       </Button>
 
                       {backup.type !== 'system' && (
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          className="text-indigo-600 hover:bg-indigo-50"
+                          className="h-8 w-8 p-0 text-indigo-600 hover:bg-indigo-50"
                           onClick={() => enterTimeTravel(backup.id.toString(), backup.created_at)}
-                          title="Time Travel (Betekintés)"
+                          title="Time Travel"
                         >
                           <Clock className="w-4 h-4" />
                         </Button>
                       )}
                       
-                      {backup.type === 'system' && (
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className={`${safeParseMetadata(backup.metadata).isArchived ? 'text-slate-300 pointer-events-none' : 'text-emerald-600 hover:bg-emerald-50'}`}
-                          onClick={async () => {
-                            try {
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className={cn(
+                          "h-8 w-8 p-0",
+                          (safeParseMetadata(backup.metadata).isArchived && !safeParseMetadata(backup.metadata).googleDriveId) 
+                            ? 'text-slate-300 pointer-events-none' 
+                            : 'text-emerald-600 hover:bg-emerald-50'
+                        )}
+                        onClick={async () => {
+                          try {
+                            if (backup.type === 'system') {
                               await apiService.downloadSystemArtifact(backup.id, backup.filename);
-                            } catch (error) {
-                              alert('Letöltés sikertelen: ' + (error as Error).message);
-                            }
-                          }}
-                          disabled={safeParseMetadata(backup.metadata).isArchived}
-                          title={safeParseMetadata(backup.metadata).isArchived ? "Archiválva: Használd a Drive linket" : "Fizikai Letöltés"}
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      )}
-
-                      {backup.type !== 'system' && (
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className={`${safeParseMetadata(backup.metadata).isArchived ? 'text-slate-300 pointer-events-none' : 'text-emerald-600 hover:bg-emerald-50'}`}
-                          onClick={async () => {
-                            try {
+                            } else {
                               await apiService.downloadBackup(backup.id);
-                            } catch (error) {
-                              alert('Letöltés sikertelen: ' + (error as Error).message);
                             }
-                          }}
-                          disabled={safeParseMetadata(backup.metadata).isArchived}
-                          title={safeParseMetadata(backup.metadata).isArchived ? "Archiválva: Használd a Drive linket" : "JSON Letöltés"}
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      )}
+                          } catch (error) {
+                            showToast('Letöltés sikertelen', 'error');
+                          }
+                        }}
+                        disabled={safeParseMetadata(backup.metadata).isArchived && !safeParseMetadata(backup.metadata).googleDriveId}
+                        title="Letöltés"
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
 
                       {(() => {
                         const meta = safeParseMetadata(backup.metadata);
-                        const isUploaded = meta.googleDriveId || meta.vaultStatus === 'completed';
+                        const isUploaded = !!(meta.googleDriveId || meta.vaultStatus === 'completed');
                         const isUploading = meta.vaultStatus === 'uploading';
                         const link = meta.googleDriveLink;
                         
+                        if (isUploading) return (
+                          <div className="h-8 w-8 flex items-center justify-center">
+                            <RefreshCw className="w-4 h-4 text-amber-500 animate-spin" />
+                          </div>
+                        );
+
                         return (
                           <div className="flex gap-1">
-                             {!isUploaded && !isUploading ? (
+                             {!isUploaded ? (
                                <Button
                                  variant="ghost"
                                  size="sm"
-                                 className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                                 title="Manuális szinkronizálás a Vaultba (Drive)"
+                                 className="h-8 w-8 p-0 text-amber-600 hover:bg-amber-50"
+                                 title="Szinkronizálás a Vaultba"
                                  onClick={async () => {
                                    try {
-                                     showToast('Szinkronizálás elindítva...', 'info');
+                                     showToast('Feltöltés indítása...', 'info');
                                      await apiService.uploadToVault(backup.id);
-                                     showToast('Feltöltés a háttérben fut. Értesítést kapsz, ha kész.', 'success');
+                                     showToast('Feltöltés elindult.', 'success');
                                      fetchData();
                                    } catch (e) {
-                                     showToast('Vault hiba: ' + (e as Error).message, 'error');
+                                     showToast('Vault hiba', 'error');
                                    }
                                  }}
                                >
                                  <Cloud className="w-4 h-4" />
                                </Button>
-                             ) : isUploading ? (
-                               <div className="h-8 w-8 flex items-center justify-center">
-                                 <RefreshCw className="w-4 h-4 text-amber-500 animate-spin" />
-                               </div>
                              ) : (
-                               <div className="flex gap-1">
-                                 {link && (
-                                   <Button
-                                     variant="ghost"
-                                     size="sm"
-                                     className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                     title="Megnyitás Google Drive-on"
-                                     onClick={() => window.open(link, '_blank')}
-                                   >
-                                     <ExternalLink className="w-4 h-4" />
-                                   </Button>
-                                 )}
-                                 <Button
-                                   variant="ghost"
-                                   size="sm"
-                                   className="h-8 w-8 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                                   title="Újraszinkronizálás"
-                                   onClick={async () => {
-                                     try {
-                                       showToast('Újraszinkronizálás elindítva...', 'info');
-                                       await apiService.uploadToVault(backup.id);
-                                       fetchData();
-                                     } catch (e) {
-                                       showToast('Vault hiba: ' + (e as Error).message, 'error');
-                                     }
-                                   }}
-                                 >
-                                   <RefreshCw className="w-4 h-4" />
-                                 </Button>
-                               </div>
+                               <Button
+                                 variant="ghost"
+                                 size="sm"
+                                 className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50"
+                                 title="Megnyitás Google Drive-on"
+                                 onClick={() => link && window.open(link, '_blank')}
+                               >
+                                 <ExternalLink className="w-4 h-4" />
+                               </Button>
                              )}
                           </div>
                         );
                       })()}
 
-                      {backup.type !== 'system' && (
-                        <div className="flex items-center gap-1">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="text-indigo-600 hover:bg-indigo-50"
-                            onClick={() => {
-                              setSelectiveRestoreBackupId(backup.id);
-                              setSelectedTables(['audit_logs', 'market_prices', 'pending_sales', 'sales', 'stock', 'product_models', 'users']);
-                            }}
-                            title="Szelektív Visszaállítás"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="text-red-600 hover:bg-red-50"
-                            onClick={() => handleRestore(backup.id)}
-                            title="Teljes Visszaállítás"
-                          >
-                            <RefreshCw className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-1.5 ml-0.5">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 w-8 p-0 text-indigo-600 hover:bg-indigo-50"
+                          onClick={() => {
+                            setSelectiveRestoreBackupId(backup.id);
+                            setSelectedTables(['audit_logs', 'market_prices', 'pending_sales', 'sales', 'stock', 'product_models', 'users']);
+                          }}
+                          title="Szelektív"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 w-8 p-0 text-rose-600 hover:bg-rose-50"
+                          onClick={() => handleRestore(backup.id)}
+                          title="Visszaállítás"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 w-8 p-0 text-slate-300 hover:text-red-500 hover:bg-red-50"
+                        onClick={() => handleDeleteBackup(backup.id)}
+                        title="Törlés"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
