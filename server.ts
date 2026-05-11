@@ -3104,6 +3104,9 @@ async function startServer() {
     const accessToken = authData.access_token;
 
     // 2. Calculate Checksum
+    if (!dataB64) {
+      throw new Error(`Nem lehet feltölteni a Google Drive-ra: hiányzó adat (${filename})`);
+    }
     const buffer = Buffer.from(dataB64, 'utf8');
     const checksum = calculateHash(buffer);
 
@@ -3880,27 +3883,46 @@ async function startServer() {
       // 2. Immediate Google Drive Sync
       let driveLink = 'N/A';
       let vaultStatus = 'failed';
+      let finalUploadResult = null;
+
       try {
-        const uploadResult = await uploadToGoogleDrive(artifact.filename, artifact.data);
-        driveLink = uploadResult.webViewLink;
-        vaultStatus = 'completed';
+        if (!artifact.data) {
+          // It might have been already uploaded by createSystemArtifact
+          let meta = artifact.metadata || {};
+          if (typeof meta === 'string') try { meta = JSON.parse(meta); } catch(e) {}
+          
+          if (meta.vaultStatus === 'completed') {
+            console.log('✅ Artifact already uploaded to Drive during creation.');
+            driveLink = meta.googleDriveLink || 'N/A';
+            vaultStatus = 'completed';
+            finalUploadResult = { id: meta.googleDriveId, webViewLink: driveLink, checksum: meta.checksum };
+          } else {
+            throw new Error('Artifact data is null but vaultStatus is not completed');
+          }
+        } else {
+          finalUploadResult = await uploadToGoogleDrive(artifact.filename, artifact.data);
+          driveLink = finalUploadResult.webViewLink;
+          vaultStatus = 'completed';
+        }
 
-        let currentMetadata = artifact.metadata || {};
-        if (typeof currentMetadata === 'string') try { currentMetadata = JSON.parse(currentMetadata); } catch(e) {}
+        if (finalUploadResult && artifact.data) {
+          let currentMetadata = artifact.metadata || {};
+          if (typeof currentMetadata === 'string') try { currentMetadata = JSON.parse(currentMetadata); } catch(e) {}
 
-        await runExec(pool, 'UPDATE backups SET metadata = ?, data = NULL WHERE id = ?', [
-          JSON.stringify({ 
-              ...currentMetadata, 
-              googleDriveId: uploadResult.id, 
-              googleDriveLink: driveLink,
-              checksum: uploadResult.checksum,
-              uploadedAt: new Date().toISOString(),
-              vaultStatus: 'completed',
-              isArchived: true // Mark as archived immediately to save Supabase DB storage
-          }),
-          artifact.id
-        ]);
-        console.log('✅ Auto-vault sync successful. Data offloaded from DB.');
+          await runExec(pool, 'UPDATE backups SET metadata = ?, data = NULL WHERE id = ?', [
+            JSON.stringify({ 
+                ...currentMetadata, 
+                googleDriveId: finalUploadResult.id, 
+                googleDriveLink: driveLink,
+                checksum: finalUploadResult.checksum,
+                uploadedAt: new Date().toISOString(),
+                vaultStatus: 'completed',
+                isArchived: true 
+            }),
+            artifact.id
+          ]);
+          console.log('✅ Auto-vault sync successful. Data offloaded from DB.');
+        }
 
         // 3. SILENT GUARDIAN: Perform automated integrity check after sync
         console.log(`🛡️ Silent Guardian: Verifying new artifact ${artifact.filename}...`);
