@@ -342,6 +342,14 @@ const Dashboard: React.FC = () => {
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button 
               variant="secondary" 
+              onClick={() => navigate('/analytics')} 
+              className="flex-1 sm:flex-none dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 text-xs sm:text-sm py-2"
+            >
+              <BarChart3 className="w-4 h-4 mr-1.5 sm:mr-2 text-indigo-600 dark:text-indigo-400" />
+              <span>Elemzések</span>
+            </Button>
+            <Button 
+              variant="secondary" 
               onClick={() => navigate('/inventory')} 
               className="flex-1 sm:flex-none dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 text-xs sm:text-sm py-2"
             >

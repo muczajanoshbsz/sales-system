@@ -22,6 +22,7 @@ import {
   Database,
   Bell,
   FileText,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "./ui/Base";
 import { useFirebase } from "./FirebaseProvider";
@@ -50,6 +51,7 @@ const Navbar: React.FC = () => {
   ];
 
   const toolItems = [
+    { id: "analytics", path: "/analytics", label: "Profit & Árrés", icon: BarChart3 },
     { id: "reports", path: "/reports", label: "Hírlevél", icon: FileText },
     { id: "ai", path: "/ai", label: "AI Elemzés", icon: Brain },
     {

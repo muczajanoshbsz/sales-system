@@ -21,6 +21,7 @@ import AuditLogs from './components/AuditLogs';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import Calculator from './components/Calculator';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 import { OnboardingTour } from './components/OnboardingTour';
 import { GhostBar } from './components/GhostBar';
@@ -233,6 +234,7 @@ const AppContent: React.FC = () => {
           <Route path="/search" element={<SearchAnalytics />} />
           <Route path="/audit" element={<AuditLogs />} />
           <Route path="/calculator" element={<Calculator />} />
+          <Route path="/analytics" element={<AnalyticsDashboard />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/admin" element={profile?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
