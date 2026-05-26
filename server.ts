@@ -186,16 +186,59 @@ async function isIpBlacklisted(pool: pg.Pool, ip: string): Promise<boolean> {
   }
 }
 
-async function recordUserSession(pool: pg.Pool, userId: string, ip: string, userAgentStr: string) {
-  console.log(`🔍 [SESSION_GUARD] Attempting to record session for ${userId} from IP ${ip}`);
+async function recordUserSession(
+  pool: pg.Pool, 
+  userId: string, 
+  ip: string, 
+  userAgentStr: string,
+  latitude?: number,
+  longitude?: number
+) {
+  console.log(`🔍 [SESSION_GUARD] Attempting to record session for ${userId} from IP ${ip} (Coords: ${latitude || 'none'}, ${longitude || 'none'})`);
   try {
     const parser = new UAParser(userAgentStr);
     const ua = parser.getResult();
 
     let geo = { city: 'Helyi', region: 'Belső', country: 'Magán hálózat', countryCode: 'HU' };
     const isLocal = ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('::ffff:127.');
-    
-    if (!isLocal && ip !== '0.0.0.0') {
+    let geoLoadedFromCoords = false;
+
+    if (latitude !== undefined && longitude !== undefined && latitude !== null && longitude !== null) {
+      try {
+        console.log(`🌍 [SESSION_GUARD] Reverse geocoding coordinates: ${latitude}, ${longitude} via Nominatim...`);
+        const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=hu`;
+        const response = await fetch(nominatimUrl, {
+          headers: {
+            'User-Agent': `AirPodsProManager/1.0 (contact: csmucza@gmail.com; user_uid: ${userId})`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json() as any;
+          if (data && data.address) {
+            const addr = data.address;
+            const fetchedCity = addr.city || addr.town || addr.village || addr.suburb || addr.municipality || addr.city_district || 'Ismeretlen';
+            const fetchedRegion = addr.county || addr.state || 'Ismeretlen';
+            const fetchedCountry = addr.country || 'Magyarország';
+            const fetchedCountryCode = (addr.country_code || 'hu').toUpperCase();
+
+            geo = {
+              city: fetchedCity,
+              region: fetchedRegion,
+              country: fetchedCountry,
+              countryCode: fetchedCountryCode
+            };
+            geoLoadedFromCoords = true;
+            console.log(`📍 [SESSION_GUARD] Geolocation reversed successfully: ${geo.city}, ${geo.region}, ${geo.country}`);
+          }
+        } else {
+          console.warn(`⚠️ [SESSION_GUARD] Nominatim error status: ${response.status}`);
+        }
+      } catch (gpsErr) {
+        console.warn(`⚠️ [SESSION_GUARD] GPS reverse geocoding failed:`, (gpsErr as Error).message);
+      }
+    }
+
+    if (!geoLoadedFromCoords && !isLocal && ip !== '0.0.0.0') {
       try {
         console.log(`🌐 [SESSION_GUARD] Fetching Geo-IP for ${ip}...`);
         const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,regionName,city`);
@@ -207,7 +250,7 @@ async function recordUserSession(pool: pg.Pool, userId: string, ip: string, user
             country: geoData.country || 'Unknown',
             countryCode: geoData.countryCode || 'XX'
           };
-          console.log(`📍 [SESSION_GUARD] Location found: ${geo.city}, ${geo.country}`);
+          console.log(`📍 [SESSION_GUARD] Location found (IP Fallback): ${geo.city}, ${geo.country}`);
         }
       } catch (geoErr) {
         console.warn(`⚠️ [SESSION_GUARD] Geo-IP fetch failed (Continuing anyway):`, (geoErr as Error).message);
@@ -1842,7 +1885,7 @@ async function startServer() {
     console.log('📥 USER SYNC REQUEST:', req.body.email);
 
     try {
-      const { uid, email: rawEmail, displayName } = req.body;
+      const { uid, email: rawEmail, displayName, latitude, longitude } = req.body;
       const email = rawEmail?.toLowerCase();
       const ip = getClientIp(req);
 
@@ -1859,7 +1902,7 @@ async function startServer() {
       }
 
       // Record successful session
-      recordUserSession(pool, uid, ip, req.headers['user-agent'] || '');
+      recordUserSession(pool, uid, ip, req.headers['user-agent'] || '', latitude, longitude);
 
       if (existing.length === 0) {
         const countRows = await runQuery<{ count: string }>(pool, 'SELECT COUNT(*)::text AS count FROM users');

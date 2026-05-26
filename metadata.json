@@ -1,5 +1,7 @@
 {
   "name": "AirPods Pro Manager",
   "description": "Professional inventory, sales, and AI-driven pricing management system for AirPods resellers.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "geolocation"
+  ]
 }

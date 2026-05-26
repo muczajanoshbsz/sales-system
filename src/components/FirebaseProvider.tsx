@@ -117,11 +117,48 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (firebaseUser) {
         setUser(firebaseUser);
         try {
-          console.log('🔄 Syncing user with backend...');
+          console.log('🔄 Syncing user with backend, requesting Geolocation...');
+          let latitude: number | undefined = undefined;
+          let longitude: number | undefined = undefined;
+
+          if (navigator.geolocation) {
+            try {
+              const position = await new Promise<GeolocationPosition | null>((resolve) => {
+                const timer = setTimeout(() => {
+                  console.log('[GEOLOCATION] Timeout reached, proceeding without coordinates.');
+                  resolve(null);
+                }, 3000);
+
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    clearTimeout(timer);
+                    resolve(pos);
+                  },
+                  (err) => {
+                    clearTimeout(timer);
+                    console.warn('[GEOLOCATION] Failed to get coordinates:', err.message);
+                    resolve(null);
+                  },
+                  { enableHighAccuracy: true, timeout: 3000 }
+                );
+              });
+
+              if (position) {
+                latitude = position.coords.latitude;
+                longitude = position.coords.longitude;
+                console.log(`📍 [GEOLOCATION] Geolocation acquired: ${latitude}, ${longitude}`);
+              }
+            } catch (geoErr) {
+              console.warn('[GEOLOCATION] Error trying to obtain browser location:', geoErr);
+            }
+          }
+
           const syncedProfile = await apiService.syncUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email!,
-            displayName: firebaseUser.displayName || undefined
+            displayName: firebaseUser.displayName || undefined,
+            latitude,
+            longitude
           });
           console.log('✅ User synced successfully:', syncedProfile.role);
           if (syncedProfile.is_suspended) {

@@ -131,7 +131,7 @@ export const apiService = {
       ...i,
       quantity: Number(i.quantity),
       buy_price: Number(i.buy_price),
-      lead_time: i.lead_time !== undefined ? Number(i.lead_time) : 7,
+      lead_time: Number(i.lead_time),
     }));
   },
 
@@ -156,7 +156,7 @@ export const apiService = {
       ...i,
       quantity: Number(i.quantity),
       buy_price: Number(i.buy_price),
-      lead_time: i.lead_time !== undefined ? Number(i.lead_time) : 7,
+      lead_time: Number(i.lead_time),
     };
   },
 
@@ -286,7 +286,13 @@ export const apiService = {
     await handleResponse(response);
   },
 
-  async syncUser(userData: { uid: string; email: string; displayName?: string }): Promise<any> {
+  async syncUser(userData: { 
+    uid: string; 
+    email: string; 
+    displayName?: string;
+    latitude?: number;
+    longitude?: number;
+  }): Promise<any> {
     const response = await fetch(`${API_BASE}/users/sync`, {
       method: 'POST',
       headers: getHeaders(),
@@ -476,6 +482,14 @@ export const apiService = {
     await handleResponse(response);
   },
 
+  async deleteBackup(id: number | string): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/backups/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+  },
+
   async downloadBackup(id: number): Promise<void> {
     try {
       const response = await fetch(`${API_BASE}/admin/backups/download/${id}`, {
@@ -505,14 +519,6 @@ export const apiService = {
       console.error('Download failed:', error);
       throw error;
     }
-  },
-
-  async deleteBackup(id: number | string): Promise<void> {
-    const response = await fetch(`${API_BASE}/admin/backups/${id}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
-    await handleResponse(response);
   },
 
   async createSystemArtifact(): Promise<any> {
