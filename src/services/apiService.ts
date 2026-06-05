@@ -739,4 +739,49 @@ export const apiService = {
     await handleResponse(response);
     return await response.json();
   },
+
+  // Monthly Goals & Predictions
+  async getMonthlyGoals(month?: string): Promise<{ goals: any[]; currentMonth: string; currentProfit: number; currentGoal: any }> {
+    const qs = month ? `?month=${month}` : '';
+    const response = await fetch(`${API_BASE}/monthly-goals${qs}`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async saveMonthlyGoal(month: string, target_profit: number): Promise<any> {
+    const response = await fetch(`${API_BASE}/monthly-goals`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ month, target_profit }),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async getGoalPredictions(month?: string): Promise<any> {
+    const qs = month ? `?month=${month}` : '';
+    const response = await fetch(`${API_BASE}/monthly-goals/predictions${qs}`, {
+      headers: getHeaders(),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
+
+  async sendGoalEmailReport(payload: {
+    month: string;
+    profit: number;
+    target: number;
+    textAnalysis: string;
+    recommendations: any[];
+  }): Promise<any> {
+    const response = await fetch(`${API_BASE}/monthly-goals/email`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    await handleResponse(response);
+    return await response.json();
+  },
 };
